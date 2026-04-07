@@ -103,3 +103,14 @@ If you're new to the project and trying to understand the design:
 If you're implementing the schematic in EasyEDA Pro, work from the
 §7 checklists in `cv-output-dac.md`, `audio-output-dac.md`, and
 `power-supply.md` directly.
+
+## Licence
+
+Hardware (schematics, PCB, mechanical) is licensed under the
+[CERN Open Hardware Licence Version 2 — Strongly Reciprocal](LICENSE)
+(CERN-OHL-S v2).
+
+Firmware (everything under [`firmware/`](firmware/)) is licensed
+separately under the [MIT License](firmware/LICENSE).
+
+Copyright © 2026 Stig Manning.
