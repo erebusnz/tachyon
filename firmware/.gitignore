@@ -1,0 +1,23 @@
+# CMake / Ninja build output
+build/
+Debug/
+Release/
+
+# Compiler artifacts
+*.o
+*.obj
+*.a
+*.d
+*.su
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.lst
+
+# STM32CubeIDE / Eclipse
+.metadata/
+.settings/
+.cproject
+.project

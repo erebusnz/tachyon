@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# Claude Code
+.claude/
+
+# EasyEDA auto-backup snapshots (<project>_backup/)
+*_backup/
