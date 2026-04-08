@@ -147,16 +147,16 @@ part where practical, with short fat traces to GND.
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
 | C_VDD1 | 10 µF | 0805 X5R/X7R | VDD (pin 1) – GND | Bulk on `+3V3_PREC` |
-| C_VDD2 | 100 nF | 0402/0603 | VDD (pin 1) – GND | HF bypass, closest to pin |
+| C_VDD2 | 100 nF | 0805 | VDD (pin 1) – GND | HF bypass, closest to pin |
 | C_VREF | 10 µF | 0805 X5R/X7R | VREF (pin 2) – GND | Required; reference input impedance is code-dependent, a low-impedance source is mandatory (`DAC8552.md:75`) |
 
 ### U2 — REF5025 decoupling (per `REF5025.md:71,72`)
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| C_REF_IN | 100 nF | 0402/0603 | VIN (pin 1) – GND | HF bypass, close to pin |
+| C_REF_IN | 100 nF | 0805 | VIN (pin 1) – GND | HF bypass, close to pin |
 | C_REF_OUT | 10 µF | 0805 X5R/X7R | VOUT (pin 6) – GND | Stability + transient response |
-| C_NR | 100 nF | 0402/0603 | TRIM/NR (pin 2) – GND | Broadband noise reduction; larger = quieter but slower startup |
+| C_NR | 100 nF | 0805 | TRIM/NR (pin 2) – GND | Broadband noise reduction; larger = quieter but slower startup |
 
 ### U7 — OPA1642 decoupling + feedback network
 
@@ -165,18 +165,18 @@ Per-rail decoupling (OPA1642 sits on ±12 V; `OPA1642.md:102`):
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
 | C_VP1 | 10 µF | 0805 X5R/X7R | V+ (pin 8) – GND | Bulk on `+12V` |
-| C_VP2 | 100 nF | 0402/0603 | V+ (pin 8) – GND | HF bypass, closest to pin |
+| C_VP2 | 100 nF | 0805 | V+ (pin 8) – GND | HF bypass, closest to pin |
 | C_VN1 | 10 µF | 0805 X5R/X7R | V− (pin 4) – GND | Bulk on `−12V` |
-| C_VN2 | 100 nF | 0402/0603 | V− (pin 4) – GND | HF bypass, closest to pin |
+| C_VN2 | 100 nF | 0805 | V− (pin 4) – GND | HF bypass, closest to pin |
 
 Feedback network (×4 non-inverting gain, per `hardware-design-plan.md` §"Op-Amp Output Stage"):
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| R1 | 30 kΩ 0.1% | 0603 thin film | OUT A (pin 1) ↔ −IN A (pin 2) | Feedback resistor A; tap *at OUT A pin, before R_PROT_A* |
-| R2 | 10 kΩ 0.1% | 0603 thin film | −IN A (pin 2) – GND | Ground leg A |
-| R3 | 30 kΩ 0.1% | 0603 thin film | OUT B (pin 7) ↔ −IN B (pin 6) | Feedback resistor B; tap *at OUT B pin, before R_PROT_B* |
-| R4 | 10 kΩ 0.1% | 0603 thin film | −IN B (pin 6) – GND | Ground leg B |
+| R1 | 30 kΩ 0.1% | 0805 thin film | OUT A (pin 1) ↔ −IN A (pin 2) | Feedback resistor A; tap *at OUT A pin, before R_PROT_A* |
+| R2 | 10 kΩ 0.1% | 0805 thin film | −IN A (pin 2) – GND | Ground leg A |
+| R3 | 30 kΩ 0.1% | 0805 thin film | OUT B (pin 7) ↔ −IN B (pin 6) | Feedback resistor B; tap *at OUT B pin, before R_PROT_B* |
+| R4 | 10 kΩ 0.1% | 0805 thin film | −IN B (pin 6) – GND | Ground leg B |
 
 Exact gain: 1 + 30 k / 10 k = ×4.0000 → 2.5000 V × 4 = 10.000 V full-scale.
 Use 0.1 % thin-film parts on R1–R4 so the untrimmed channel-to-channel gain
@@ -194,7 +194,7 @@ BOM part for R_PROT: **YAGEO AC0805FR-7W1KL** (1 kΩ, 0805, 1 %, 250 mW,
 worst-case short-circuit dissipation — sustained jack shorts at full scale
 are handled indefinitely.
 
-The board already stocks 100 nF 0402/0603 and 10 µF 0805 from the audio-DAC
+The board already stocks 100 nF 0805 and 10 µF 0805 from the audio-DAC
 BOM line; reuse those values. The 0.1 % feedback resistors (R1–R4) must be
 added to the BOM if not already present.
 

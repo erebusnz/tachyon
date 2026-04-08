@@ -38,9 +38,9 @@ Eurorack +12V (P1) ──> D1 (SS14) ──> L1 (BLM21AG601SN1D ferrite) ──>
 
                                        +5V ─────────────────────────────────> REF5025 VIN (precision 2.5 V reference)
 
-                                       +12V ────────────────────────────────> OPA1642 V+ (U7, CV output buffers)
+                                       +12V ────────────────────────────────> OPA1642 V+ (U7 CV buffers, U10 audio buffers)
 
-Eurorack -12V (P1) ──> D2 (SS14) ──> L2 (BLM21AG601SN1D ferrite) ──> C12 100uF || C10 100nF ──> -12V ──> OPA1642 V-
+Eurorack -12V (P1) ──> D2 (SS14) ──> L2 (BLM21AG601SN1D ferrite) ──> C12 100uF || C10 100nF ──> -12V ──> OPA1642 V- (U7, U10)
 ```
 
 Notes:
@@ -73,15 +73,17 @@ Notes:
 | REF5025 | +5V | 1 mA | 1.5 mA | Precision Vref; needs VIN ≥ 3.0 V so it cannot share `+3V3_PREC` |
 | TPS7A2033 ×2 quiescent | +5V | 0.05 mA | -- | Negligible |
 | **Total +5V load** | | **~135 mA** | **~225 mA** | Buck must supply this (STM32 + OLED + PCM5102A + LDO1/2 + REF5025) |
-| OPA1642 (U7, dual) | +12V | 3.6 mA | 4.6 mA | 2 × 1.8 mA typ / 2.3 mA max quiescent (`OPA1642.md:48`); signal current into 10 kΩ+ load is negligible |
-| **Total +12V load** | | **~140 mA** | **~230 mA** | Buck input current + OPA1642 V+ quiescent; dominated by the buck |
-| OPA1642 (U7, dual) | -12V | 3.6 mA | 4.6 mA | Same package, V- side of quiescent supply current |
-| **Total -12V load** | | **~4 mA** | **~5 mA** | Output-stage only — no other -12 V loads on the board |
+| OPA1642 (U7, dual)  | +12V | 3.6 mA | 4.6 mA | CV output buffers; 2 × 1.8 mA typ / 2.3 mA max quiescent (`OPA1642.md:48`) |
+| OPA1642 (U10, dual) | +12V | 3.6 mA | 4.6 mA | Audio output buffers (PCM5102A → jacks, gain ×1.68) |
+| **Total +12V load** | | **~143 mA** | **~235 mA** | Buck input current + both OPA1642 V+ quiescent; dominated by the buck |
+| OPA1642 (U7, dual)  | -12V | 3.6 mA | 4.6 mA | CV output buffers, V- side |
+| OPA1642 (U10, dual) | -12V | 3.6 mA | 4.6 mA | Audio output buffers, V- side |
+| **Total -12V load** | | **~7 mA** | **~10 mA** | Output stages only — no other -12 V loads on the board |
 
 The TPS54202's 2 A rating gives ~9× headroom over peak load -- the buck
 runs cool, well below its thermal envelope. The ±12 V rails are very
-lightly loaded (OPA1642 only) so the Eurorack bus sees < 5 mA on -12 V
-and ~140 mA on +12 V; well inside any Doepfer busboard budget.
+lightly loaded (two OPA1642s only) so the Eurorack bus sees ~10 mA on
+-12 V and ~143 mA on +12 V; well inside any Doepfer busboard budget.
 
 ---
 
@@ -356,7 +358,7 @@ Items already in the existing BOM are noted; items to add are flagged.
 - [ ] Place LDO2 (TPS7A2033) with 1 uF in/out caps; output net `+3V3_AUDIO`
 - [ ] Route `+3V3_PREC` to U6 (DAC8552 VDD) only — **not** to REF5025 (which runs from `+5V`) and **not** to U7 (OPA1642, which runs from ±12 V)
 - [ ] Route `+5V` directly to U2 (REF5025 VIN)
-- [ ] Route `+12V` to U7 (OPA1642 V+, pin 8) and `-12V` to U7 V- (pin 4) with local 100 nF + 10 µF decoupling on each rail at the package
+- [ ] Route `+12V` to U7 and U10 (OPA1642 V+, pin 8) and `-12V` to V- (pin 4) of both, with local 100 nF + 10 µF decoupling on each rail at each package
 - [ ] Route `+3V3_AUDIO` to U3 (PCM5102A) AVDD pin 18 and CPVDD pin 12
 - [ ] Tap `+3V3` from WeAct board 3V3 pin → OLED, U3 DVDD pin 19, U4
 - [ ] Confirm L2 is a single continuous GND plane with no splits or
