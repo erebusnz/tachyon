@@ -35,6 +35,8 @@ information.
   display / DAC / op-amp choices with rationale, and the overall
   "what goes where" summary. Start here.
 
+  ![MCU schematic](schematic-mcu.png)
+
 ### Subsystem specs
 
 These are schematic-side wiring specs — per-pin connections,
@@ -45,9 +47,14 @@ in EasyEDA Pro.
   DAC8552 (U6) + REF5025 (U2) + OPA1642 (U7), ×4 non-inverting gain
   stage producing 0–10 V at 1 V/oct, with feedback-tap and
   output-protection rules.
+
+  ![CV and I/O schematic](schematic-io.png)
+
 - **[audio-output-dac.md](audio-output-dac.md)** — stereo audio
   chain: PCM5102A (U3) on I²S3, DirectPath outputs to two TS jacks,
   `~MUTE` line, and per-pin decoupling.
+
+  ![Audio schematic](schematic-audio.png)
 - **[power-supply.md](power-supply.md)** — full power tree: +12 V
   input protection, +12 V → +5 V buck (TPS54202), the two
   TPS7A2033 low-noise LDOs for `+3V3_PREC` and `+3V3_AUDIO`, and
@@ -65,15 +72,6 @@ in EasyEDA Pro.
 - **[calibration.md](calibration.md)** — one-time CV output
   calibration procedure (two-point slope/offset fit against a DMM)
   for the precision DAC path.
-
-### Reference images
-
-- **`eurorackpower.png`** — 10-pin Doepfer power header schematic
-  showing D1/D2 protection, L1/L2 ferrites, and C9–C12 bulk + HF
-  bypass caps.
-- **`ref-dac-amp.png`** — reference schematic for the
-  DAC-→-op-amp-→-jack topology (×4 gain, feedback network,
-  output-protection resistors).
 
 ### Datasheets
 
@@ -99,10 +97,6 @@ If you're new to the project and trying to understand the design:
 4. `audio-output-dac.md` — the audio signal path
 5. `pcb-design.md` — how it all lands on copper
 6. `calibration.md` — what you do after assembly
-
-If you're implementing the schematic in EasyEDA Pro, work from the
-§7 checklists in `cv-output-dac.md`, `audio-output-dac.md`, and
-`power-supply.md` directly.
 
 ## Licence
 
