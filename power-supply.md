@@ -260,7 +260,7 @@ Both ±12 V rails from the Doepfer header run through an identical
 three-stage input network before reaching anything else on the board:
 
 ```
-P1 ──> Dn (SS14) ──> Ln (BLM21AG601SN1D) ──> Cbulk 100uF || Chf 100nF ──> rail
+P1 ──> Dn (SS14) ──> Fn (PTC) ──> Ln (BLM21AG601SN1D) ──> Cbulk 100uF || Chf 100nF ──> rail
 ```
 
 ### 6.1 Reverse polarity / hot-plug protection (D1, D2)
@@ -275,7 +275,30 @@ headroom from 11.6 V; OPA1642 V- sees -11.6 V which is fine — OPA1642 is speci
 No additional input TVS is required because the TPS54202's 28 V Vin max
 is well above any plausible Eurorack transient.
 
-### 6.2 Input EMI ferrites (L1, L2)
+### 6.2 Resettable fuses (F1, F2)
+
+Downstream of each protection diode, each rail passes through a
+**TECHFUSE SMD0805** polymeric PTC before reaching the EMI ferrite.
+These catch downstream shorts (buck FET failure, tantalum short,
+assembly errors) without relying on the Eurorack PSU's current limit,
+and they self-reset once the fault is cleared.
+
+| Ref | MPN | LCSC | Package | Vmax | I_hold | Rail | Notes |
+|---|---|---|---|---|---|---|---|
+| F1 | SMD0805-050-30V | C42924282 | 0805 | 30 V | 500 mA | +12 V | ~2× margin over 235 mA peak buck draw |
+| F2 | SMD0805-020-30V | C6851465  | 0805 | 30 V | 200 mA | -12 V | 20× margin over 10 mA OPA1642 V- load; smallest in the family |
+
+Placement: in series **after** D1/D2 and **before** L1/L2, so the PTC
+protects the ferrite, bulk caps, and everything downstream. Series
+resistance is negligible at our load (a few tens of mΩ cold).
+
+PTCs are resettable but not instant — expect a few seconds to cool
+down after a fault clears before the rail comes back. This is fine for
+a module that's simply unplugged and re-plugged; during bring-up if
+you're repeatedly shorting the rail you may want to power-cycle the
+rack rather than waiting.
+
+### 6.3 Input EMI ferrites (L1, L2)
 
 Each rail passes through a **Murata BLM21AG601SN1D** chip ferrite bead
 after the protection diode:
@@ -297,7 +320,7 @@ DC loss: at peak +12 V draw (~135 mA through the buck plus ~5 mA for
 the OPA1642 V+ quiescent, well under 250 mA total) the 0.15 Ω DCR drops
 < 40 mV -- negligible.
 
-### 6.3 Input bulk and HF bypass (C9–C12)
+### 6.4 Input bulk and HF bypass (C9–C12)
 
 Downstream of each ferrite, each rail is decoupled by a parallel pair:
 
@@ -334,32 +357,10 @@ Items already in the existing BOM are noted; items to add are flagged.
 | 13.3 k 1 % 0805 | R_FBB | Vishay CRCW080513K3FKEA / **C4359485** (or **C4309412**) | **Add** |
 | 68 pF NP0 50 V ±1 % 0805 | C_FF | YAGEO CC0805FRNPO9BN680 / **C541517** | **Add** |
 | Ferrite bead 600 Ω @ 100 MHz ×2 | L1, L2 | Murata BLM21AG601SN1D -- LCSC TODO | **Add (×2)** |
+| PTC resettable fuse 500 mA 30 V 0805 | F1 | TECHFUSE SMD0805-050-30V / **C42924282** | **Add** |
+| PTC resettable fuse 200 mA 30 V 0805 | F2 | TECHFUSE SMD0805-020-30V / **C6851465** | **Add** |
 | 100 µF bulk cap ×2 | C11, C12 | ±12 V bulk -- MPN/LCSC TODO | **Add (×2)** |
 | 100 nF 0805 ×2 | C9, C10 | C1711 (existing line 1) | Reuse |
 | SS14 Schottky ×2 | D1, D2 | SS14 (existing BOM line) | Reuse |
 
 ---
-
-## 8. Implementation checklist (EasyEDA Pro)
-
-- [ ] Resolve LCSC C-numbers for the WEBENCH parts (inductor, C_BUCK_IN,
-      C_BUCK_OUT, R_FBT, R_FBB, C_FF) and add to BOM
-- [ ] Place the buck in a corner of the PCB, far from U2 (REF5025) and
-      U3 (PCM5102A)
-- [ ] Wire +12 V (post-D1) → C_BUCK_IN → TPS54202 VIN
-- [ ] Wire TPS54202 SW → L_BUCK → +5V net (synchronous buck — no external catch diode)
-- [ ] Wire feedback divider: +5V → R_FBT → FB → R_FBB → GND
-- [ ] Place C_FF (68 pF C0G) **across R_FBT** (parallel to the top resistor)
-- [ ] Wire C_BOOT (100 nF) from BOOT pin to SW pin
-- [ ] Place C_BUCK_OUT (47 uF 1210) on the +5V net at the buck output,
-      ground return tied directly to TPS54202 GND pad
-- [ ] Route +5V to: WeAct VIN pin, LDO1 VIN, LDO2 VIN
-- [ ] Place LDO1 (TPS7A2033) with 1 uF in/out caps; output net `+3V3_PREC`
-- [ ] Place LDO2 (TPS7A2033) with 1 uF in/out caps; output net `+3V3_AUDIO`
-- [ ] Route `+3V3_PREC` to U6 (DAC8552 VDD) only — **not** to REF5025 (which runs from `+5V`) and **not** to U7 (OPA1642, which runs from ±12 V)
-- [ ] Route `+5V` directly to U2 (REF5025 VIN)
-- [ ] Route `+12V` to U7 and U10 (OPA1642 V+, pin 8) and `-12V` to V- (pin 4) of both, with local 100 nF + 10 µF decoupling on each rail at each package
-- [ ] Route `+3V3_AUDIO` to U3 (PCM5102A) AVDD pin 18 and CPVDD pin 12
-- [ ] Tap `+3V3` from WeAct board 3V3 pin → OLED, U3 DVDD pin 19, U4
-- [ ] Confirm L2 is a single continuous GND plane with no splits or
-      cuts anywhere on the board -- see `pcb-design.md` §3

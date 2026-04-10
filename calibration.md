@@ -347,18 +347,3 @@ that is almost always the VCO's own tuning knob, not the sequencer.
 
 ---
 
-## 10. Checklist
-
-Bring-up calibration checklist for a freshly assembled board:
-
-- [ ] Board powered from Eurorack bus, no front-panel jacks patched
-- [ ] DMM set to DC volts, 20 V range, black on GND
-- [ ] OLED menu → Calibration → CV Out A → Low point → record, confirm
-- [ ] OLED menu → Calibration → CV Out A → High point → record, confirm
-- [ ] Firmware displays computed slope and offset; sanity check:
-      slope between 152.0 and 153.0 µV/LSB, offset between ±20 mV
-- [ ] Repeat for CV Out B
-- [ ] Run Verify page, record all 5 points on both channels
-- [ ] All absolute errors ≤ ±5 mV; all linearity errors ≤ ±2 mV
-- [ ] Save to flash
-- [ ] Power-cycle and confirm "cal loaded from flash" on boot

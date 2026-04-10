@@ -309,29 +309,3 @@ component).
 
 ---
 
-## 7. Summary checklist
-
-Design-time checks, in rough order of importance:
-
-- [ ] L2 is a single, continuous GND pour. No splits, no cuts, no moats.
-- [ ] L3 has separate pour regions for +5V, +3V3, +3V3_PREC, +3V3_AUDIO.
-- [ ] Power regions on L3 do not cross under ICs on a different rail.
-- [ ] TPS54202 is in Zone A, far corner from PCM5102A and REF5025.
-- [ ] Buck input loop (C_BUCK_IN → VIN → GND → C_BUCK_IN) is ≤ 5 mm²
-      loop area on L1.
-- [ ] L_BUCK and D_BUCK are tight to the SW node; SW copper is minimized
-      (small pour, not a long trace) to reduce radiated EMI.
-- [ ] C_BUCK_OUT GND return vias go directly to L2, not through a
-      trace detour.
-- [ ] Both TPS7A2033 LDOs are at the Zone A/C border; +5V feed enters
-      from the Zone A side, 3V3 output delivers into Zone C.
-- [ ] PCM5102A is at the Zone B-facing edge of Zone C; I2S traces are
-      ≤ 30 mm, series-terminated at the source, ground-flanked on L1.
-- [ ] REF5025 and DAC8552 are in the far corner of Zone C from the
-      PCM5102A.
-- [ ] Every IC decoupling cap is ≤ 2 mm from its power pin with a
-      dedicated GND via next to the cap.
-- [ ] Generous GND stitching vias around the buck, under the PCM5102A,
-      and along the board edge.
-- [ ] No fast signals (I2S, SPI, buck SW node) routed on L4.
-- [ ] No L2 copper cuts. (Worth listing twice.)

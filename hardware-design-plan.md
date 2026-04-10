@@ -33,16 +33,21 @@ The following pins are consumed by on-board hardware and must not be reassigned 
 | PC14, PC15 | 32.768 kHz LSE crystal | Must remain unloaded |
 | PA11, PA12 | USB D−/D+ | Keep 27 Ω series resistors populated |
 | PA13, PA14 | SWD SWDIO/SWCLK | Leave accessible; can be reassigned post-debug if needed |
+| PA0, PA1 | CV modulation inputs | `ADC1_IN0` / `ADC1_IN1` (see `cv-input.md` §6) |
+| PA2 | Clock input | `TIM2_CH3` input capture (see `clock-input.md` §6) |
+| PA3 | Gate A output | `TIM2_CH4` output compare (see `gate-output.md` §3) |
+| PA6 | Gate B output | `TIM3_CH1` output compare (see `gate-output.md` §3) |
+| PB1 | DAC8552 SYNC (CS) | GPIO output, active-low (see `cv-output-dac.md` §2) |
+| PB13, PB15 | SPI2 SCK / MOSI | Shared bus: SH1107 OLED + DAC8552 |
 | PC10, PC12, PA15 | I2S3 → PCM5102A | `I2S3_CK` / `I2S3_SD` / `I2S3_WS` (see `audio-output-dac.md` §2) |
 | PC6 | PCM5102A XSMT | Board-wide `~MUTE` (see `audio-output-dac.md` §2) |
-| PB13, PB15 | SPI2 SCK / MOSI | Shared bus: SH1107 OLED + DAC8552 |
 | PB2 | On-board blue LED | Reusable; share with status indication |
 | PC13 | User KEY button | Reusable; suitable for mode toggle |
 
 ### Available GPIO for Sequencer Use
 
-- **Port A:** PA0–PA7, PA9, PA10
-- **Port B:** PB0–PB1, PB3–PB12, PB14 (PB2 = LED, shared; PB13/PB15 = SPI2)
+- **Port A:** PA4, PA5, PA7, PA9, PA10 (PA0/PA1 = CV in, PA2 = clock in, PA3 = gate A, PA6 = gate B)
+- **Port B:** PB0, PB3–PB12, PB14 (PB1 = DAC CS, PB2 = LED, shared; PB13/PB15 = SPI2)
 - **Port C:** PC0–PC5, PC7, PC8, PC9, PC11, PC13 (button, shared)
 - **ADC-capable pins (12-bit):** PA0–PA7 (ADC1/2/3 inputs), PC0–PC5 (ADC1/2 inputs), PB0–PB1 (ADC1/2 inputs)
 - **DAC outputs:** PA4 (DAC1), PA5 (DAC2) — onboard 12-bit; supplemented by external 16-bit DAC for CV precision (see DAC section)
@@ -138,7 +143,7 @@ Items already provided by the WeAct core board are marked accordingly.
 | External ADC | Precision CV input | SPI/I2C | No — F405 built-in ADC is sufficient |
 | DAC8552IDGKR (16-bit dual DAC) | CV outputs | SPI2 (shared with OLED) | **Yes** |
 | OPA1642AIDR (dual JFET, RRO, LCSC C67640) | DAC output buffering + ×4 gain to 0–10 V | Analog | **Yes** |
-| REF5025IDR (precision 2.5 V ref) | DAC VREF, powered from +3V3_PREC | — | **Yes** (for pitch accuracy) |
+| REF5025IDR (precision 2.5 V ref) | DAC VREF, powered from +5V | — | **Yes** (for pitch accuracy) |
 | Low-noise analog LDO | Separate analog 3.3V rail for ADC/DAC | — | **Yes** |
 | PCM5102APWR | Audio I2S output (see `audio-output-dac.md`) | I2S3 | **Yes** |
 | SH1107 OLED 1.5″ 128×128 | Menu / status display | SPI2 (shared) | **Yes** |
@@ -189,5 +194,10 @@ Items already provided by the WeAct core board are marked accordingly.
 | EC11E encoder A | e.g. PC4 | GPIO EXTI, pull-up |
 | EC11E encoder B | e.g. PC5 | GPIO EXTI, pull-up |
 | EC11E push switch | e.g. PB3 | GPIO EXTI, pull-up |
+| CV input 1 | PA0 | ADC1_IN0 — see `cv-input.md` |
+| CV input 2 | PA1 | ADC1_IN1 — see `cv-input.md` |
+| Clock input | PA2 | TIM2_CH3 input capture — see `clock-input.md` |
+| Gate A output | PA3 | TIM2_CH4 output compare — see `gate-output.md` |
+| Gate B output | PA6 | TIM3_CH1 output compare — see `gate-output.md` |
 
 All pins are available in the free GPIO pool. I2C1 is not yet allocated to any other peripheral. The DAC8552 and OLED share SPI2's clock/MOSI; each has its own CS GPIO so firmware serialises transactions.
