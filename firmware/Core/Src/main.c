@@ -112,7 +112,7 @@ int main(void)
   Paint_SetScale(16);
   Paint_SelectImage(image);
   Paint_Clear(BLACK);
-  Paint_DrawString_EN(10, 50, "Hello world", &Font12, 0x0F, 0x00);
+  Paint_DrawString_EN(25, 58, "Hello world", &Font12, 0x0F, 0x00);
   OLED_1in5_Display(image);
   printf("OLED initialized\r\n");
   /* USER CODE END 2 */
