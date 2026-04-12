@@ -29,7 +29,7 @@ Source references:
 | DAC channels | 2 (DAC A, DAC B) | One per CV output; no spare channels for accent/mod |
 | DAC VREF | 2.500 V from REF5025 (pin 6) | Sets DAC full-scale to 2.500 V |
 | DAC SPI mode | Mode 1 (CPOL = 0, CPHA = 1) | Clocks in on falling SCLK edge |
-| SPI bus | SPI2, shared with SH1107 OLED | Separate CS per slave; both write-only |
+| SPI bus | SPI2 (dedicated — OLED is on separate SPI1) | No bus contention or SPI mode conflict |
 | Reference | REF5025IDR, 2.5 V, 3 ppm/°C | Drives DAC8552 VREF at 2.500 V |
 | Op-amp | OPA1642AIDR (dual JFET, rail-to-rail) | 5.1 nV/√Hz noise, 1 mV typ Vos, ±11.8 V swing on ±12 V |
 | Topology | Non-inverting, G = ×4 | Scales 0–2.500 V DAC to 0–10.000 V CV |
@@ -40,16 +40,15 @@ Source references:
 
 ## 2. STM32F405 pin allocation
 
-SPI2 is shared with the SH1107 OLED. SCK/MOSI are common nets; each slave has
-its own active-low chip-select driven by a GPIO, and firmware serialises
-transactions on the bus. The DAC8552 is write-only (no MISO) and the OLED is
-write-only, so there is no bus-contention risk.
+SPI2 is dedicated to the DAC8552 — the SSD1327 OLED runs on its own SPI1 bus
+(see `user-interface.md` §1). This eliminates any bus contention between
+display refreshes and timing-critical DAC updates.
 
 | DAC8552 pin | Net name | STM32 pin | Peripheral / AF |
 |---|---|---|---|
 | 5 SYNC (~CS) | `DAC-SPI-CS` | **PB1** | GPIO output, push-pull, idle HIGH |
-| 6 SCLK | `DAC-SPI-SCLK` | **PB13** | SPI2_SCK (AF5), shared with OLED |
-| 7 DIN | `DAC-SPI-MOSI` | **PB15** | SPI2_MOSI (AF5), shared with OLED |
+| 6 SCLK | `DAC-SPI-SCLK` | **PB13** | SPI2_SCK (AF5) |
+| 7 DIN | `DAC-SPI-MOSI` | **PB15** | SPI2_MOSI (AF5) |
 
 Notes:
 - **`DAC-SPI-CS`** must idle HIGH. The DAC8552 clocks DIN on the falling edge
@@ -59,10 +58,9 @@ Notes:
   per write.
 - **SPI mode 1 (CPOL = 0, CPHA = 1).** The device also accepts mode 2
   (`DAC8552.md:71`), but pick mode 1 in the HAL config and do not change it.
-- **Bus sharing with OLED.** PB13/PB15 are already reserved by the OLED
-  wiring. The DAC and OLED must not be selected simultaneously; both CS
-  lines are kept HIGH by default and only one slave is driven LOW per
-  transaction. See `hardware-design-plan.md` §"Pin Budget".
+- **No bus sharing.** The OLED has been moved to SPI1 (PA5/PA7) so SPI2 is
+  now dedicated to the DAC8552. SPI2 remains permanently in Mode 1 — no
+  CPHA switching needed. See `user-interface.md` §1.2 for rationale.
 
 The REF5025 and OPA1642 consume **no MCU pins** — both are purely analog.
 

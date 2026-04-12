@@ -156,7 +156,7 @@ reasoning as `cv-input.md` §4.3.
 
 | Signal | STM32 pin | Peripheral / AF | Notes |
 |---|---|---|---|
-| `CLK_IN` | **PA2** | TIM2_CH3 (AF1) / TIM5_CH3 (AF2) / TIM9_CH1 (AF3) | 5V-tolerant (FT) pin; input capture for period measurement |
+| `CLK-IN` | **PA2** | TIM2_CH3 (AF1) / TIM5_CH3 (AF2) / TIM9_CH1 (AF3) | 5V-tolerant (FT) pin; input capture for period measurement |
 
 PA2 is **free** per the current `hardware-design-plan.md` pin
 allocation. It is not claimed by USB, SWD, I2S3, SPI2, the encoder,

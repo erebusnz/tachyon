@@ -61,10 +61,10 @@ Notes:
 | Load | Rail | Typ | Peak | Notes |
 |---|---|---|---|---|
 | STM32F405 @ 168 MHz | +3V3 (WeAct LDO) | 80 mA | 150 mA | Peak with USB enumeration / I/O activity |
-| SH1107 OLED 128x128 | +3V3 (WeAct LDO) | 10 mA | 20 mA | Depends on contrast / pixel count |
+| SSD1327 OLED 128x128 | +3V3 (WeAct LDO) | 15 mA | 30 mA | 4-bit grayscale; panel VCC from on-board boost |
 | 74AHCT1G125 buffer | +3V3 (WeAct LDO) | 1 mA | 2 mA | |
 | PCM5102A DVDD | +3V3 (WeAct LDO) | 3 mA | 5 mA | Internal LDO drops to 1.8 V |
-| **Subtotal +3V3 (digital)** | | **~95 mA** | **~180 mA** | Comes out of WeAct onboard LDO |
+| **Subtotal +3V3 (digital)** | | **~100 mA** | **~190 mA** | Comes out of WeAct onboard LDO |
 | PCM5102A AVDD | +3V3_AUDIO | 17 mA | 20 mA | |
 | PCM5102A CPVDD | +3V3_AUDIO | 4.5 mA | 6 mA | Charge pump |
 | **Subtotal +3V3_AUDIO** | | **~22 mA** | **~26 mA** | TPS7A2033 #2 |
@@ -243,7 +243,7 @@ LDO that takes 5 V VIN and produces the digital 3.3 V used by the MCU,
 USB peripherals, and on-board indicators. We feed this LDO from our local
 +5 V rail and tap **+3V3** off the WeAct board's 3V3 pin to power:
 
-- OLED (SH1107 1.5")
+- OLED (SSD1327 1.5")
 - PCM5102A DVDD (pin 19)
 - 74AHCT1G125 buffer (U4)
 - Any other logic on the digital plane

@@ -27,32 +27,44 @@
 
 The following pins are consumed by on-board hardware and must not be reassigned to sequencer I/O:
 
-| Pin(s) | Reserved by | Notes |
-|---|---|---|
-| PH0, PH1 | 8 MHz HSE crystal | Must remain unloaded |
-| PC14, PC15 | 32.768 kHz LSE crystal | Must remain unloaded |
-| PA11, PA12 | USB D−/D+ | Keep 27 Ω series resistors populated |
-| PA13, PA14 | SWD SWDIO/SWCLK | Leave accessible; can be reassigned post-debug if needed |
-| PA0, PA1 | CV modulation inputs | `ADC1_IN0` / `ADC1_IN1` (see `cv-input.md` §6) |
-| PA2 | Clock input | `TIM2_CH3` input capture (see `clock-input.md` §6) |
-| PA3 | Gate A output | `TIM2_CH4` output compare (see `gate-output.md` §3) |
-| PA6 | Gate B output | `TIM3_CH1` output compare (see `gate-output.md` §3) |
-| PB1 | DAC8552 SYNC (CS) | GPIO output, active-low (see `cv-output-dac.md` §2) |
-| PB13, PB15 | SPI2 SCK / MOSI | Shared bus: SH1107 OLED + DAC8552 |
-| PC10, PC12, PA15 | I2S3 → PCM5102A | `I2S3_CK` / `I2S3_SD` / `I2S3_WS` (see `audio-output-dac.md` §2) |
-| PC6 | PCM5102A XSMT | Board-wide `~MUTE` (see `audio-output-dac.md` §2) |
-| PB2 | On-board blue LED | Reusable; share with status indication |
-| PC13 | User KEY button | Reusable; suitable for mode toggle |
+| Pin(s) | Net name | Peripheral / AF | Notes |
+|---|---|---|---|
+| PH0, PH1 | — | HSE crystal | WeAct board; must remain unloaded |
+| PC14, PC15 | — | LSE crystal | WeAct board; must remain unloaded |
+| PA11, PA12 | — | USB OTG FS D−/D+ | WeAct board; keep 27 Ω series resistors populated |
+| PA13, PA14 | — | SWD SWDIO/SWCLK | WeAct board; leave accessible for debug |
+| PA0 | `CV-IN-A` | ADC1_IN0 | CV modulation input A (see `cv-input.md`) |
+| PA1 | `CV-IN-B` | ADC1_IN1 | CV modulation input B (see `cv-input.md`) |
+| PA2 | `CLK-IN` | TIM2_CH3 | Clock input capture (see `clock-input.md`) |
+| PA3 | `GATE-OUT-A` | TIM2_CH4 | Gate A output compare (see `gate-output.md`) |
+| PA5 | `OLED-SPI-SCLK` | SPI1_SCK (AF5) | OLED dedicated bus (see `user-interface.md` §1) |
+| PA6 | `GATE-OUT-B` | TIM3_CH1 | Gate B output compare (see `gate-output.md`) |
+| PA7 | `OLED-SPI-MOSI` | SPI1_MOSI (AF5) | OLED dedicated bus (see `user-interface.md` §1) |
+| PA15 | `I2S3_WS` | I2S3_WS (AF6) | PCM5102A word select (see `audio-output-dac.md`) |
+| PB1 | `DAC-SPI-CS` | GPIO output | DAC8552 SYNC, active-low (see `cv-output-dac.md`) |
+| PB3 | `USR-ENC-SW` | GPIO EXTI | Encoder push switch (see `user-interface.md` §2) |
+| PB4 | `OLED-DC` | GPIO output | OLED data/command select (see `user-interface.md` §1) |
+| PB5 | `OLED-RES` | GPIO output | OLED reset, active-low (see `user-interface.md` §1) |
+| PB6 | `USR-ENC-A` | TIM4_CH1 (AF2) | Encoder quadrature A (see `user-interface.md` §2) |
+| PB7 | `USR-ENC-B` | TIM4_CH2 (AF2) | Encoder quadrature B (see `user-interface.md` §2) |
+| PB12 | `OLED-SPI-CS` | GPIO output | OLED chip select, active-low (see `user-interface.md` §1) |
+| PB13 | `DAC-SPI-SCLK` | SPI2_SCK (AF5) | DAC8552 clock (see `cv-output-dac.md`) |
+| PB15 | `DAC-SPI-MOSI` | SPI2_MOSI (AF5) | DAC8552 data (see `cv-output-dac.md`) |
+| PC0 | `USR-POT-1` | ADC1_IN10 | 10K pot wiper (see `user-interface.md` §3) |
+| PC6 | `~MUTE` | GPIO output | PCM5102A ~XSMT (see `audio-output-dac.md`) |
+| PC10 | `I2S3_BCK` | I2S3_CK (AF6) | PCM5102A bit clock (see `audio-output-dac.md`) |
+| PC12 | `I2S3_SD` | I2S3_SD (AF6) | PCM5102A serial data (see `audio-output-dac.md`) |
 
 ### Available GPIO for Sequencer Use
 
-- **Port A:** PA4, PA5, PA7, PA9, PA10 (PA0/PA1 = CV in, PA2 = clock in, PA3 = gate A, PA6 = gate B)
-- **Port B:** PB0, PB3–PB12, PB14 (PB1 = DAC CS, PB2 = LED, shared; PB13/PB15 = SPI2)
-- **Port C:** PC0–PC5, PC7, PC8, PC9, PC11, PC13 (button, shared)
+- **Port A:** PA4, PA9, PA10 (PA0/PA1 = CV in, PA2 = clock in, PA3 = gate A, PA5/PA7 = SPI1 OLED, PA6 = gate B)
+- **Port B:** PB0, PB2, PB8–PB11, PB14 (PB1 = `DAC-SPI-CS`, PB2 = LED shared, PB3 = `USR-ENC-SW`, PB4 = `OLED-DC`, PB5 = `OLED-RES`, PB6/PB7 = `USR-ENC-A`/`USR-ENC-B`, PB12 = `OLED-SPI-CS`, PB13/PB15 = SPI2)
+- **Port C:** PC1–PC5, PC7, PC8, PC9, PC11, PC13 (button, shared) (PC0 = `USR-POT-1`)
 - **ADC-capable pins (12-bit):** PA0–PA7 (ADC1/2/3 inputs), PC0–PC5 (ADC1/2 inputs), PB0–PB1 (ADC1/2 inputs)
-- **DAC outputs:** PA4 (DAC1), PA5 (DAC2) — onboard 12-bit; supplemented by external 16-bit DAC for CV precision (see DAC section)
-- **SPI buses:** SPI1 (PA5/PA6/PA7 + CS), SPI2 (PB13/PB14/PB15 + CS) — for external DAC
-- **I2C buses:** I2C1 (PB6/PB7 or PB8/PB9), I2C2 (PB10/PB11)
+- **Reserve ADC pool:** PC1–PC5, PB0 — six ADC-capable pins for future pots, CV inputs, or sensors
+- **DAC outputs:** PA4 (DAC1) — onboard 12-bit; PA5 (DAC2) consumed by SPI1 OLED SCK. Supplemented by external 16-bit DAC for CV precision (see DAC section)
+- **SPI buses:** SPI1 (PA5 SCK / PA7 MOSI) — OLED; SPI2 (PB13/PB15 + CS) — DAC8552
+- **I2C buses:** I2C1 (PB8/PB9 — default PB6/PB7 consumed by TIM4 encoder), I2C2 (PB10/PB11)
 - **Timers with PWM:** TIM1–TIM14; PWM available on most GPIO pins for RGB LED or gate timing
 
 ## RGB LED for Operating Mode Indication
@@ -141,63 +153,74 @@ Items already provided by the WeAct core board are marked accordingly.
 | USB-C connector | USB MIDI | — | No — on WeAct board (route to panel via extension) |
 | Digital 3.3V LDO | MCU/USB power | — | No — on WeAct board |
 | External ADC | Precision CV input | SPI/I2C | No — F405 built-in ADC is sufficient |
-| DAC8552IDGKR (16-bit dual DAC) | CV outputs | SPI2 (shared with OLED) | **Yes** |
+| DAC8552IDGKR (16-bit dual DAC) | CV outputs | SPI2 (dedicated) | **Yes** |
 | OPA1642AIDR (dual JFET, RRO, LCSC C67640) | DAC output buffering + ×4 gain to 0–10 V | Analog | **Yes** |
 | REF5025IDR (precision 2.5 V ref) | DAC VREF, powered from +5V | — | **Yes** (for pitch accuracy) |
 | Low-noise analog LDO | Separate analog 3.3V rail for ADC/DAC | — | **Yes** |
 | PCM5102APWR | Audio I2S output (see `audio-output-dac.md`) | I2S3 | **Yes** |
-| SH1107 OLED 1.5″ 128×128 | Menu / status display | SPI2 (shared) | **Yes** |
-| Alps Alpine EC11E18244AU | Menu navigation, parameter adjust, confirm (rotary encoder w/ push) | 2× GPIO EXTI (A/B) + GPIO EXTI (switch) | **Yes** |
+| SSD1327 OLED 1.5″ 128×128 4-bit grayscale | Menu / status display | SPI1 (dedicated) | **Yes** |
+| Alps Alpine EC11E18244AU | Menu navigation, parameter adjust, confirm (rotary encoder w/ push) | TIM4 encoder mode (PB6/PB7) + GPIO EXTI (switch) | **Yes** |
+| Alps Alpine 10K linear pot (RK09K or equiv.) | General-purpose parameter knob, firmware-assignable | ADC1_IN10 (PC0) | **Yes** |
 
 ---
 
 ### Input Hardware
 
-**Sole control — Alps Alpine EC11E18244AU (incremental rotary encoder with push switch)**
+**Alps Alpine EC11E18244AU — incremental rotary encoder with push switch**
 - 11 mm EC11E series, 24 detents/revolution, 24 pulses/revolution, integrated momentary push switch on the shaft
-- Quadrature outputs A/B → two GPIOs with internal pull-ups; decode in firmware on pin-change interrupts (or TIMx encoder mode if an encoder-capable timer channel pair is free)
+- Quadrature outputs A/B → PB6/PB7 (TIM4_CH1/CH2, AF2); decoded in hardware via TIM4 encoder mode — zero CPU overhead, counter auto-increments in hardware
 - Common pin (between A and B) → GND
-- Push switch → GPIO with internal pull-up (active-low on press), interrupt-capable
+- Push switch → PB3, GPIO with internal pull-up (active-low on press), EXTI interrupt
 - Use: rotate to navigate menu items / adjust the selected parameter value, press to confirm/enter and back out of sub-menus (short vs long press in firmware)
 - Single-control UX: menu state machine distinguishes "navigation mode" (rotate moves highlight) from "edit mode" (rotate changes value); press toggles between them
 
-**Debouncing:** The EC11E encoder contacts bounce (~5 ms typical). Handle the push switch in firmware (5–10 ms software debounce); the quadrature state-machine decode tolerates bounce on A/B. Add 10 nF caps to GND on A, B, and the switch pin for noise immunity in a Eurorack environment.
+**Debouncing:** The EC11E encoder contacts bounce (~5 ms typical). Handle the push switch in firmware (5–10 ms software debounce). TIM4 encoder mode's input filter (ICFilter) provides hardware-level bounce rejection on A/B; the external 10 nF caps to GND on A, B, and the switch pin add RF immunity in a Eurorack environment.
+
+**Alps Alpine 10K linear potentiometer (RK09K1130A5R or equivalent 9 mm vertical PCB-mount)**
+- Wiper → PC0 (ADC1_IN10), CW terminal → +3V3, CCW terminal → GND
+- 100 nF cap on wiper to GND for noise filtering
+- Firmware-assignable: the ADC reading maps to whichever parameter is currently selected or assigned via the menu
+- Added to the ADC1 scan group after PA0/PA1 (CV inputs); 8–16× moving average in firmware for stable readings
+
+See `user-interface.md` for full wiring, decoupling, and firmware details.
 
 ### Display Hardware
 
-**Selected: 1.5″ SH1107 OLED, 128×128, SPI**
-- Controller: SH1107 — column/page addressing; use an SH1107-specific driver (e.g. U8g2 `U8G2_SH1107_128X128` or Adafruit SH110X in SPI mode)
-- SPI mode: 4-wire (SCK, MOSI, CS, DC) + optional RES; no MISO needed — display is write-only
-- 3.3V supply, ~5–10 mA typical at normal contrast
-- SPI throughput vs I2C: SPI at 8–20 MHz refreshes the full 128×128 framebuffer in ~0.8 ms; I2C at 400 kHz would take ~33 ms — eliminates any visible flicker on menu transitions
-- 128×128 px fits 5–6 menu lines at 8px font or 3–4 lines at 16px, plus a status bar
-- Module dimensions: ~34mm × 34mm PCB; visible area ~27mm × 27mm — suits a 12–14 HP panel
-- **Bus sharing:** OLED shares SPI2 (PB13 SCK / PB15 MOSI) with the DAC8552 precision DAC using separate CS pins — both are write-only so there is no bus contention risk (DAC8552 has no MISO anyway)
-- **Note:** SH1107 is not register-compatible with SSD1306; confirm the module's init sequence from the breakout's datasheet (Adafruit/Waveshare variants differ slightly)
+**Selected: Waveshare 1.5″ SSD1327 OLED, 128×128, 4-bit grayscale, SPI**
+- Controller: SSD1327 (Solomon Systech) — 4-bit grayscale (16 levels per pixel); see `datasheets/SSD1327.md`
+- SPI mode: 4-wire (SCK, MOSI, CS, DC) + RES; no MISO needed — display is write-only
+- SPI Mode 0 (CPOL=0, CPHA=0), max 10 MHz SCLK; dedicated SPI1 bus (PA5 SCK, PA7 MOSI) — no mode conflict with DAC8552 (Mode 1 on SPI2)
+- 3.3V logic supply (VDD), ~15–30 mA typical; panel VCC from on-board boost converter
+- GDDRAM: 8192 bytes (two pixels per byte, upper/lower nibble). Full framebuffer transfer at 10 MHz: ~6.6 ms
+- 128×128 px fits 5–6 menu lines at 8px font or 3–4 lines at 16px, plus a status bar; grayscale enables smooth UI for waveforms, bar graphs, and highlighted selections
+- Module dimensions: ~44.5 mm × 37 mm PCB; visible area ~27mm × 27mm — suits a 12–14 HP panel
+- **Dedicated bus:** OLED runs on SPI1 (PA5 SCK / PA7 MOSI), separate from the DAC8552 on SPI2. This eliminates SPI mode switching and allows concurrent DMA transfers (SPI1 on DMA2, SPI2 on DMA1) — the 6.6 ms OLED framebuffer write never blocks timing-critical DAC updates
+- **Driver:** U8g2 `U8G2_SSD1327_WS_128X128` or Adafruit SSD1327 (SPI mode); not register-compatible with SSD1306 or SH1107
 
 ### Pin Budget
 
-| Signal | Pin | Peripheral |
+| Net name | Pin | Peripheral / AF |
 |---|---|---|
-| OLED SCK | PB13 | SPI2 SCK (shared with DAC8552) |
-| OLED MOSI | PB15 | SPI2 MOSI (shared with DAC8552) |
-| OLED CS | e.g. PB12 | GPIO (SPI2 NSS or soft CS) |
-| OLED DC | e.g. PB4 | GPIO output |
-| OLED RES | e.g. PB5 | GPIO output (optional, tie high if unused) |
-| DAC8552 SCLK | PB13 | SPI2 SCK (shared with OLED) — schematic net `DAC-SPI-SCLK` |
-| DAC8552 DIN | PB15 | SPI2 MOSI (shared with OLED) — schematic net `DAC-SPI-MOSI` |
-| DAC8552 SYNC (CS) | e.g. PB1 | GPIO output, active-low — schematic net `DAC-SPI-CS` |
-| PCM5102A BCK | PC10 | SPI3/I2S3_CK (AF6) — schematic net `I2S3_BCK` |
-| PCM5102A DIN | PC12 | SPI3/I2S3_SD (AF6) — schematic net `I2S3_SD` |
-| PCM5102A LRCK | PA15 | SPI3/I2S3_WS (AF6) — schematic net `I2S3_WS` |
-| PCM5102A XSMT | PC6 | GPIO output, board-wide active-low `~MUTE` |
-| EC11E encoder A | e.g. PC4 | GPIO EXTI, pull-up |
-| EC11E encoder B | e.g. PC5 | GPIO EXTI, pull-up |
-| EC11E push switch | e.g. PB3 | GPIO EXTI, pull-up |
-| CV input 1 | PA0 | ADC1_IN0 — see `cv-input.md` |
-| CV input 2 | PA1 | ADC1_IN1 — see `cv-input.md` |
-| Clock input | PA2 | TIM2_CH3 input capture — see `clock-input.md` |
-| Gate A output | PA3 | TIM2_CH4 output compare — see `gate-output.md` |
-| Gate B output | PA6 | TIM3_CH1 output compare — see `gate-output.md` |
+| `CV-IN-A` | PA0 | ADC1_IN0 |
+| `CV-IN-B` | PA1 | ADC1_IN1 |
+| `CLK-IN` | PA2 | TIM2_CH3 input capture |
+| `GATE-OUT-A` | PA3 | TIM2_CH4 output compare |
+| `OLED-SPI-SCLK` | PA5 | SPI1_SCK (AF5) |
+| `GATE-OUT-B` | PA6 | TIM3_CH1 output compare |
+| `OLED-SPI-MOSI` | PA7 | SPI1_MOSI (AF5) |
+| `I2S3_WS` | PA15 | I2S3_WS (AF6) |
+| `DAC-SPI-CS` | PB1 | GPIO output, active-low |
+| `USR-ENC-SW` | PB3 | GPIO EXTI, pull-up |
+| `OLED-DC` | PB4 | GPIO output |
+| `OLED-RES` | PB5 | GPIO output |
+| `USR-ENC-A` | PB6 | TIM4_CH1 (AF2) |
+| `USR-ENC-B` | PB7 | TIM4_CH2 (AF2) |
+| `OLED-SPI-CS` | PB12 | GPIO output, active-low |
+| `DAC-SPI-SCLK` | PB13 | SPI2_SCK (AF5) |
+| `DAC-SPI-MOSI` | PB15 | SPI2_MOSI (AF5) |
+| `USR-POT-1` | PC0 | ADC1_IN10 |
+| `~MUTE` | PC6 | GPIO output, active-low |
+| `I2S3_BCK` | PC10 | I2S3_CK (AF6) |
+| `I2S3_SD` | PC12 | I2S3_SD (AF6) |
 
-All pins are available in the free GPIO pool. I2C1 is not yet allocated to any other peripheral. The DAC8552 and OLED share SPI2's clock/MOSI; each has its own CS GPIO so firmware serialises transactions.
+All pins are drawn from the free GPIO pool. The OLED uses a dedicated SPI1 bus (PA5/PA7) — separate from DAC8552 on SPI2 (PB13/PB15) — so there is no bus contention or SPI mode conflict. PB6/PB7 consume I2C1's default pins for TIM4 encoder mode; I2C1 remains available on alternate pins PB8/PB9 if needed.

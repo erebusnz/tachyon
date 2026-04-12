@@ -7,7 +7,7 @@ MCU pin assignment needed to wire it up in EasyEDA Pro.
 
 Source references:
 - `datasheets/PCM5102A.md` -- pinout, decoupling rules, application notes
-- `hardware-design-plan.md` -- MCU pin allocation, SPI2/OLED/DAC reservations
+- `hardware-design-plan.md` -- MCU pin allocation, SPI1 (OLED) / SPI2 (DAC) reservations
 
 ---
 
@@ -29,7 +29,7 @@ Source references:
 
 ## 2. STM32F405 pin allocation
 
-I2S2 is unavailable (PB12-PB15 belong to SPI2 / OLED + DAC8552). The
+I2S2 is unavailable (PB12-PB15 belong to SPI2 DAC8552 + OLED CS). The
 PCM5102A is driven from **I2S3** on PC10 / PC12 / PA15.
 
 | PCM5102A pin | Net name | STM32 pin | Peripheral / AF |

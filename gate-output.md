@@ -83,8 +83,8 @@ output-compare in toggle mode with inverted polarity
 
 | Signal | STM32 pin | Peripheral / AF | Notes |
 |---|---|---|---|
-| `GATE_A` | **PA3** | TIM2_CH4 (AF1) / TIM5_CH4 (AF2) / TIM9_CH2 (AF3) | 5V-tolerant (FT) pin; adjacent to PA2 (clock input) for clean routing |
-| `GATE_B` | **PA6** | TIM3_CH1 (AF2) / TIM13_CH1 (AF9) | 5V-tolerant (FT) pin; available per pin budget |
+| `GATE-OUT-A` | **PA3** | TIM2_CH4 (AF1) / TIM5_CH4 (AF2) / TIM9_CH2 (AF3) | 5V-tolerant (FT) pin; adjacent to PA2 (clock input) for clean routing |
+| `GATE-OUT-B` | **PA6** | TIM3_CH1 (AF2) / TIM13_CH1 (AF9) | 5V-tolerant (FT) pin; available per pin budget |
 
 Both pins are **free** per `hardware-design-plan.md`. PA3 is adjacent to
 PA2 (clock input) on Port A, keeping clock/gate signals in the same PCB

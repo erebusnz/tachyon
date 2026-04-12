@@ -12,7 +12,7 @@ single rotary encoder and a 128×128 OLED.
 | **MCU** | STM32F405RGT6 @ 168 MHz (WeAct 64-pin core board) |
 | **CV outputs** | 2 × 16-bit, 0–10 V, 1 V/oct, DAC8552 + OPA1642 ×4 |
 | **Audio output** | Stereo I²S, PCM5102A DirectPath |
-| **Display** | 1.5″ 128×128 OLED (SH1107, SPI) |
+| **Display** | 1.5″ 128×128 OLED (SSD1327, 4-bit grayscale, SPI) |
 | **Input** | Alps Alpine EC11E18244AU rotary encoder with push switch |
 | **MIDI** | USB MIDI class device over the WeAct USB-C port |
 | **Power** | 10-pin Doepfer header, ±12 V only (local +5 V buck) |
