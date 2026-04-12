@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-// Note indices for cof_render()
+// Note indices
 #define COF_C   0
 #define COF_G   1
 #define COF_D   2
@@ -17,10 +17,10 @@
 #define COF_Bb  10
 #define COF_F   11
 
-// Render the circle of fifths zoomed view for the given half-step (0-23).
-// Even values center a segment, odd values show the border between segments.
+// Render the circle of fifths zoomed view at the given rotation angle
+// (in degrees). 0 = C at top, 30 = G at top, etc.
 // Draws into the currently selected Paint image via Paint_SetPixel().
 // The Paint image must be initialised with Scale=16 before calling.
-void cof_render(uint8_t half_step);
+void cof_render_angle(float angle_deg);
 
 #endif

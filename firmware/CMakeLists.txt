@@ -44,12 +44,24 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user sources here
+    Drivers/WAVESHARE_OLED/Config/DEV_Config.c
+    Drivers/WAVESHARE_OLED/OLED/OLED_1in5.c
+    Drivers/WAVESHARE_OLED/GUI/GUI_Paint.c
+    Drivers/WAVESHARE_OLED/Fonts/font8.c
+    Drivers/WAVESHARE_OLED/Fonts/font12.c
+    Drivers/WAVESHARE_OLED/Fonts/font16.c
+    Drivers/WAVESHARE_OLED/Fonts/font20.c
+    Drivers/WAVESHARE_OLED/Fonts/font24.c
+    Core/UI/circle_of_fifths.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
+    Drivers/WAVESHARE_OLED/Config
+    Drivers/WAVESHARE_OLED/OLED
+    Drivers/WAVESHARE_OLED/GUI
+    Drivers/WAVESHARE_OLED/Fonts
+    Core/UI
 )
 
 # Add project symbols (macros)

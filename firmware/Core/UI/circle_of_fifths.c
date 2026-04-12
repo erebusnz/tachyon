@@ -21,6 +21,13 @@
 #define DEG2RAD        (3.14159265f / 180.0f)
 #define RAD2DEG        (180.0f / 3.14159265f)
 
+// Dots along the inner edge
+#define DOT_RADIUS_BIG    8.0f    // virtual units
+#define DOT_RADIUS_SMALL  4.0f
+#define DOT_TRACK_RADIUS  (OUTER_RADIUS + DOT_RADIUS_BIG * 4.0f)  // above outer border
+#define DOT_LEVEL         10      // grey level for dots
+#define NUM_DOTS          24      // one every 15° (big at 0,30,60... small at 15,45,75...)
+
 // Number of accidentals per note (C=0, G=1, ... F#=6, ... F=1)
 static const uint8_t accidentals[NUM_SEGMENTS] = {
     0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1
@@ -77,7 +84,7 @@ static void compute_viewport(void)
     vp_ready = 1;
 }
 
-// Find nearest sprite angle index for a given viewport angle
+// Find nearest sprite angle index
 static int angle_index(float theta_from_top)
 {
     int best = 0;
@@ -100,15 +107,49 @@ static inline uint8_t sprite_get(const uint8_t *buf, int x, int y, int w)
         return (buf[byte] >> 4) & 0x0F;
 }
 
-void cof_render(uint8_t half_step)
+// Draw an anti-aliased dot at virtual position (cx,cy) with given radius
+static void draw_dot(float cx, float cy, float radius, uint8_t level)
+{
+    float px_per_virt = WIDTH / vp_size;
+    int screen_r = (int)(radius * px_per_virt + 1.5f);
+    int scx = (int)((cx - vp_x) / vp_size * WIDTH);
+    int scy = (int)((cy - vp_y) / vp_size * HEIGHT);
+
+    for (int dy = -screen_r; dy <= screen_r; dy++) {
+        int py = scy + dy;
+        if (py < 0 || py >= HEIGHT) continue;
+        for (int dx = -screen_r; dx <= screen_r; dx++) {
+            int px = scx + dx;
+            if (px < 0 || px >= WIDTH) continue;
+
+            // Distance in virtual units
+            float vdx = dx / px_per_virt;
+            float vdy = dy / px_per_virt;
+            float dist = sqrtf(vdx * vdx + vdy * vdy);
+
+            if (dist > radius + 1.0f) continue;
+
+            // Anti-alias: blend at the edge
+            float alpha = radius - dist + 0.5f;
+            if (alpha <= 0.0f) continue;
+            if (alpha > 1.0f) alpha = 1.0f;
+
+            int pixel = (int)(level * alpha + 0.5f);
+            if (pixel > 0)
+                Paint_SetPixel(px, py, (UWORD)pixel);
+        }
+    }
+}
+
+void cof_render_angle(float angle_deg)
 {
     if (!vp_ready)
         compute_viewport();
 
-    if (half_step >= NUM_SEGMENTS * 2)
-        return;
-
-    float rotation = -(float)half_step * SEGMENT_ANGLE / 2.0f;
+    // Segments snap to 15° half-steps, dots move smoothly
+    float snapped = roundf(angle_deg / 15.0f) * 15.0f;
+    float rotation = -snapped;
+    float smooth_rotation = -angle_deg;
 
     // Precompute segment grey levels
     uint8_t seg_grey[NUM_SEGMENTS];
@@ -191,7 +232,6 @@ void cof_render(uint8_t half_step)
                 uint8_t text_alpha = sprite_get(sp->pixels, sx, sy, sp->w);
                 if (text_alpha == 0) continue;
 
-                // Determine the segment fill at this pixel for blending
                 float x = vp_x + (px + 0.5f) / WIDTH * vp_size;
                 float y = vp_y + (py + 0.5f) / HEIGHT * vp_size;
                 float angle = atan2f(y, x) * RAD2DEG;
@@ -200,7 +240,6 @@ void cof_render(uint8_t half_step)
                 if (seg_index >= NUM_SEGMENTS) seg_index = 0;
                 uint8_t bg = seg_grey[seg_index];
 
-                // Blend: text_alpha/15 coverage of black over segment fill
                 float alpha = text_alpha / 15.0f;
                 int pixel = (int)(bg * (1.0f - alpha) + 0.5f);
                 if (pixel < 0) pixel = 0;
@@ -209,5 +248,27 @@ void cof_render(uint8_t half_step)
                 Paint_SetPixel(px, py, (UWORD)pixel);
             }
         }
+    }
+
+    // --- Pass 3: dots along inner edge ---
+    for (int d = 0; d < NUM_DOTS; d++) {
+        float dot_angle_deg = d * (360.0f / NUM_DOTS) - 90.0f + smooth_rotation;
+        // Normalize
+        while (dot_angle_deg < -180.0f) dot_angle_deg += 360.0f;
+        while (dot_angle_deg >  180.0f) dot_angle_deg -= 360.0f;
+        // Skip dots far from viewport
+        float from_top = dot_angle_deg + 90.0f;
+        if (from_top < -40.0f || from_top > 40.0f) continue;
+
+        float ang_rad = dot_angle_deg * DEG2RAD;
+        float cx = DOT_TRACK_RADIUS * cosf(ang_rad);
+        float cy = DOT_TRACK_RADIUS * sinf(ang_rad);
+
+        // Big dot at segment centers (every 30° = every 2nd dot),
+        // small dot at borders (the odd ones)
+        int is_big = (d % 2 == 0);
+        float radius = is_big ? DOT_RADIUS_BIG : DOT_RADIUS_SMALL;
+
+        draw_dot(cx, cy, radius, DOT_LEVEL);
     }
 }
