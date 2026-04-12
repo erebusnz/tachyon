@@ -19,6 +19,10 @@ set(MX_Include_Dirs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/CMSIS/Device/ST/STM32F4xx/Include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/CMSIS/Include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Config
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/OLED
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/GUI
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts
 )
 
 # STM32CubeMX generated application sources
@@ -32,6 +36,14 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32f4xx_hal_msp.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/sysmem.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/syscalls.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Config/DEV_Config.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/OLED/OLED_1in5.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/GUI/GUI_Paint.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts/font8.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts/font12.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts/font16.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts/font20.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts/font24.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../startup_stm32f405xx.s
 )
 
@@ -54,6 +66,7 @@ set(STM32_Drivers_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_cortex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_spi.c
 )
 
 # Drivers Midllewares
