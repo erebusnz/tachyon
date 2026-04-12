@@ -23,6 +23,7 @@ set(MX_Include_Dirs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/OLED
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/GUI
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/UI
 )
 
 # STM32CubeMX generated application sources
@@ -44,6 +45,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts/font16.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts/font20.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/WAVESHARE_OLED/Fonts/font24.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/UI/circle_of_fifths.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../startup_stm32f405xx.s
 )
 

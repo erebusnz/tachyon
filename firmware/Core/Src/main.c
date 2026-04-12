@@ -27,6 +27,7 @@
 #include "DEV_Config.h"
 #include "OLED_1in5.h"
 #include "GUI_Paint.h"
+#include "circle_of_fifths.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -111,9 +112,8 @@ int main(void)
   Paint_NewImage(image, 128, 128, 180, BLACK);
   Paint_SetScale(16);
   Paint_SelectImage(image);
-  Paint_Clear(BLACK);
-  Paint_DrawString_EN(25, 58, "Hello world", &Font12, 0x0F, 0x00);
-  OLED_1in5_Display(image);
+
+  uint8_t half_step = 0;
   printf("OLED initialized\r\n");
   /* USER CODE END 2 */
 
@@ -124,9 +124,14 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2);
+    cof_render(half_step);
+    OLED_1in5_Display(image);
+
+    half_step++;
+    if (half_step >= 24)
+      half_step = 0;
+
     HAL_Delay(500);
-    printf("PB2: %d\r\n", HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_2));
   }
   /* USER CODE END 3 */
 }
