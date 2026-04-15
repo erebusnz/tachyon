@@ -37,17 +37,20 @@ decoupling BOMs:
   stage producing 0–10 V at 1 V/oct, with feedback-tap and
   output-protection rules.
 
+  ![CV and I/O schematic](schematic-io.png)
+
 - **[audio-output-dac.md](audio-output-dac.md)** — stereo audio
   chain: PCM5102A (U3) on I²S3, DirectPath outputs to two TS jacks,
   `~MUTE` line, and per-pin decoupling.
 
   ![Audio schematic](schematic-audio.png)
+
 - **[power-supply.md](power-supply.md)** — full power tree: +12 V
   input protection, +12 V → +5 V buck (TPS54202), the two
   TPS7A2033 low-noise LDOs for `+3V3_PREC` and `+3V3_AUDIO`, and
   the rail current budget.
 
-  ![CV and I/O schematic](schematic-io.png)
+  ![Power schematic](schematic-power.png)
 
 ### Physical design
 
