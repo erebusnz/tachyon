@@ -22,7 +22,7 @@ BORDER_WIDTH = 5
 TEXT_RADIUS = (INNER_RADIUS + OUTER_RADIUS) / 2
 
 NOTES = ["C", "G", "D", "A", "E", "B", "F#", "Db", "Ab", "Eb", "Bb", "F"]
-ANGLES_DEG = [-30.0, -15.0, 0.0, 15.0, 30.0]  # relative to 12 o'clock
+ANGLES_DEG = [-30.0, 0.0, 30.0]  # relative to 12 o'clock (one per detent)
 NUM_ANGLES = len(ANGLES_DEG)
 
 # ── Rendering parameters ────────────────────────────────────────────────────

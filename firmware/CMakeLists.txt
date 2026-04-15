@@ -53,6 +53,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/WAVESHARE_OLED/Fonts/font20.c
     Drivers/WAVESHARE_OLED/Fonts/font24.c
     Core/UI/circle_of_fifths.c
+    Core/Src/encoder.c
 )
 
 # Add include paths

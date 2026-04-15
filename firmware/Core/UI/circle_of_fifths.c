@@ -17,25 +17,19 @@
 #define GREY_DARK      2
 #define BG_LEVEL       0
 #define BORDER_LEVEL   15
+#define MARK_INSET     6.0f   /* virtual units of black ring inside marked segment */
 
 #define DEG2RAD        (3.14159265f / 180.0f)
 #define RAD2DEG        (180.0f / 3.14159265f)
-
-// Dots along the inner edge
-#define DOT_RADIUS_BIG    8.0f    // virtual units
-#define DOT_RADIUS_SMALL  4.0f
-#define DOT_TRACK_RADIUS  (OUTER_RADIUS + DOT_RADIUS_BIG * 4.0f)  // above outer border
-#define DOT_LEVEL         10      // grey level for dots
-#define NUM_DOTS          24      // one every 15° (big at 0,30,60... small at 15,45,75...)
 
 // Number of accidentals per note (C=0, G=1, ... F#=6, ... F=1)
 static const uint8_t accidentals[NUM_SEGMENTS] = {
     0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1
 };
 
-// Sprite angle indices: 0=-30°, 1=-15°, 2=0°, 3=+15°, 4=+30°
+// Sprite angle indices: 0=-30°, 1=0°, 2=+30°
 static const float sprite_angles[NOTE_SPRITE_NUM_ANGLES] = {
-    -30.0f, -15.0f, 0.0f, 15.0f, 30.0f
+    -30.0f, 0.0f, 30.0f
 };
 
 // Viewport (constant, computed once)
@@ -107,49 +101,14 @@ static inline uint8_t sprite_get(const uint8_t *buf, int x, int y, int w)
         return (buf[byte] >> 4) & 0x0F;
 }
 
-// Draw an anti-aliased dot at virtual position (cx,cy) with given radius
-static void draw_dot(float cx, float cy, float radius, uint8_t level)
-{
-    float px_per_virt = WIDTH / vp_size;
-    int screen_r = (int)(radius * px_per_virt + 1.5f);
-    int scx = (int)((cx - vp_x) / vp_size * WIDTH);
-    int scy = (int)((cy - vp_y) / vp_size * HEIGHT);
-
-    for (int dy = -screen_r; dy <= screen_r; dy++) {
-        int py = scy + dy;
-        if (py < 0 || py >= HEIGHT) continue;
-        for (int dx = -screen_r; dx <= screen_r; dx++) {
-            int px = scx + dx;
-            if (px < 0 || px >= WIDTH) continue;
-
-            // Distance in virtual units
-            float vdx = dx / px_per_virt;
-            float vdy = dy / px_per_virt;
-            float dist = sqrtf(vdx * vdx + vdy * vdy);
-
-            if (dist > radius + 1.0f) continue;
-
-            // Anti-alias: blend at the edge
-            float alpha = radius - dist + 0.5f;
-            if (alpha <= 0.0f) continue;
-            if (alpha > 1.0f) alpha = 1.0f;
-
-            int pixel = (int)(level * alpha + 0.5f);
-            if (pixel > 0)
-                Paint_SetPixel(px, py, (UWORD)pixel);
-        }
-    }
-}
-
-void cof_render_angle(float angle_deg)
+void cof_render_angle(float angle_deg, const uint8_t *marked)
 {
     if (!vp_ready)
         compute_viewport();
 
-    // Segments snap to 15° half-steps, dots move smoothly
-    float snapped = roundf(angle_deg / 15.0f) * 15.0f;
+    // Snap to 30° detent positions.
+    float snapped = roundf(angle_deg / 30.0f) * 30.0f;
     float rotation = -snapped;
-    float smooth_rotation = -angle_deg;
 
     // Precompute segment grey levels
     uint8_t seg_grey[NUM_SEGMENTS];
@@ -196,10 +155,21 @@ void cof_render_angle(float angle_deg)
             if (border_alpha > 1.0f) border_alpha = 1.0f;
 
             uint8_t fill;
-            if (dist_outer > 0.0f || dist_inner > 0.0f)
+            if (dist_outer > 0.0f || dist_inner > 0.0f) {
                 fill = BG_LEVEL;
-            else
+            } else {
                 fill = seg_grey[seg_index];
+                /* Inset black ring for marked segments: just inside the
+                 * white border, drawn over the grey fill. */
+                if (marked && marked[seg_index]) {
+                    float inset_edge = half_bw + MARK_INSET;
+                    if (dist_border < inset_edge) {
+                        float a = (inset_edge - dist_border);
+                        if (a > 1.0f) a = 1.0f;
+                        fill = (uint8_t)(fill * (1.0f - a) + BG_LEVEL * a + 0.5f);
+                    }
+                }
+            }
 
             float value = fill * border_alpha + BORDER_LEVEL * (1.0f - border_alpha);
             int pixel = (int)(value + 0.5f);
@@ -250,25 +220,4 @@ void cof_render_angle(float angle_deg)
         }
     }
 
-    // --- Pass 3: dots along inner edge ---
-    for (int d = 0; d < NUM_DOTS; d++) {
-        float dot_angle_deg = d * (360.0f / NUM_DOTS) - 90.0f + smooth_rotation;
-        // Normalize
-        while (dot_angle_deg < -180.0f) dot_angle_deg += 360.0f;
-        while (dot_angle_deg >  180.0f) dot_angle_deg -= 360.0f;
-        // Skip dots far from viewport
-        float from_top = dot_angle_deg + 90.0f;
-        if (from_top < -40.0f || from_top > 40.0f) continue;
-
-        float ang_rad = dot_angle_deg * DEG2RAD;
-        float cx = DOT_TRACK_RADIUS * cosf(ang_rad);
-        float cy = DOT_TRACK_RADIUS * sinf(ang_rad);
-
-        // Big dot at segment centers (every 30° = every 2nd dot),
-        // small dot at borders (the odd ones)
-        int is_big = (d % 2 == 0);
-        float radius = is_big ? DOT_RADIUS_BIG : DOT_RADIUS_SMALL;
-
-        draw_dot(cx, cy, radius, DOT_LEVEL);
-    }
 }
