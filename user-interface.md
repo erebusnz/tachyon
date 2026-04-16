@@ -69,8 +69,8 @@ Both are acceptable at a 10-30 Hz UI refresh rate.
 | `OLED-SPI-SCLK` | PA5 | SPI1_SCK (AF5) | Dedicated OLED bus; PA5 also DAC1 output — DAC1 not used |
 | `OLED-SPI-MOSI` | PA7 | SPI1_MOSI (AF5) | Dedicated OLED bus; PA6 (MISO) not needed — display is write-only |
 | `OLED-SPI-CS` | PB12 | GPIO output | Active-low chip select |
-| `OLED-DC` | PB4 | GPIO output | Data/command select |
-| `OLED-RES` | PB5 | GPIO output | Active-low reset; hold high in normal operation |
+| `OLED-DC` | PC2 | GPIO output | Data/command select |
+| `OLED-RES` | PC1 | GPIO output | Active-low reset; hold high in normal operation |
 
 ### 1.4 Wiring
 
@@ -81,8 +81,8 @@ Both are acceptable at a 10-30 Hz UI refresh rate.
   PA7  ─────────┤ DIN                      │
                 │                          │
   PB12 ─────────┤ CS   SSD1327 OLED module  │
-  PB4  ─────────┤ DC                       │
-  PB5  ─────────┤ RES                      │
+  PC2  ─────────┤ DC                       │
+  PC1  ─────────┤ RES                      │
                 │                          │
   +3V3 ─────────┤ VCC                      │
   GND  ─────────┤ GND                      │
@@ -142,7 +142,7 @@ switching noise.
 |---|---|---|---|
 | `USR-ENC-A` | PB6 | TIM4_CH1 (AF2) | Hardware encoder mode, internal pull-up enabled |
 | `USR-ENC-B` | PB7 | TIM4_CH2 (AF2) | Hardware encoder mode, internal pull-up enabled |
-| `USR-ENC-SW` | PB3 | GPIO EXTI, internal pull-up enabled | Active-low on press |
+| `USR-ENC-SW` | PB4 | GPIO EXTI, internal pull-up enabled | Active-low on press |
 
 The encoder common pin connects to GND.
 
@@ -151,8 +151,7 @@ ADC-capable (ADC1_IN14/IN15) but do not map to any timer's CH1/CH2
 encoder-mode inputs. PB6/PB7 map to TIM4_CH1/CH2 (AF2), enabling
 zero-overhead hardware quadrature decoding. PB6/PB7 are the default
 I2C1 pins, but I2C1 is not allocated and remaps to PB8/PB9 (both
-free) if needed later. PC4/PC5 return to the reserve ADC pool — a
-net gain of two ADC-capable pins.
+free) if needed later.
 
 ### 2.3 Wiring
 
@@ -171,14 +170,14 @@ net gain of two ADC-capable pins.
         │       │              │
        GND      │              │
                 │              │
-  PB3 ──┬───────┤ SW (NO)      │
+  PB4 ──┬───────┤ SW (NO)      │
         │       │              │
        10nF     │   SW Common ─┤── GND
         │       │              │
        GND      └──────────────┘
 ```
 
-Internal pull-ups on PB6, PB7, PB3 pull idle state high. Encoder
+Internal pull-ups on PB6, PB7, PB4 pull idle state high. Encoder
 contacts pull to GND through the common pin. The 10 nF caps filter
 contact bounce and RF noise; they form an RC with the internal
 pull-up (~40 kOhm on F405) giving tau ~0.4 ms — fast enough for
@@ -204,23 +203,7 @@ each quadrature edge with no CPU intervention.
 - No interrupt needed for counting — firmware reads TIM4->CNT
   on each UI update pass (typically 1-10 ms)
 
-**Why hardware mode over EXTI:**
-
-| | TIM4 encoder mode | EXTI interrupt decode |
-|---|---|---|
-| CPU overhead | Zero — counter updates in hardware | ISR entry/exit per edge (~20-40 cycles × 4 edges/detent) |
-| Missed edges | Impossible — hardware state machine tracks all edges regardless of firmware load | Possible if a higher-priority ISR (I2S DMA, SPI) delays the EXTI handler |
-| Jitter | None — counter is always current when read | Counter update delayed by interrupt latency |
-| Code complexity | Configure TIM4 once; poll TIM4->CNT | State table, volatile counter, critical sections around shared variable |
-| Pin requirement | Must be on a timer CH1/CH2 pair | Any GPIO |
-
-For a 24 PPR hand-turned encoder, missed edges from EXTI are
-unlikely in practice. But hardware encoder mode is strictly better:
-simpler code, zero overhead, and guaranteed correctness even during
-long blocking operations like a full OLED framebuffer transfer
-(~1.6 ms on SPI2 at 10 MHz).
-
-**Push switch** remains on PB3 as a GPIO EXTI interrupt (falling
+**Push switch** is on PB4 as a GPIO EXTI interrupt (falling
 edge, 5-10 ms software debounce). The switch is a low-frequency
 event that does not benefit from timer hardware.
 
@@ -235,7 +218,7 @@ Single-control navigation using rotate + press:
 | Any | — | Long press (>500 ms): back / exit sub-menu |
 
 Firmware distinguishes short press (<500 ms) from long press
-(>=500 ms) using a timer started on the falling edge of PB3.
+(>=500 ms) using a timer started on the falling edge of PB4.
 
 ---
 
@@ -308,20 +291,19 @@ New pins consumed by user-interface hardware:
 | `OLED-SPI-SCLK` | PA5 | SPI1_SCK (AF5) |
 | `OLED-SPI-MOSI` | PA7 | SPI1_MOSI (AF5) |
 | `OLED-SPI-CS` | PB12 | GPIO output |
-| `OLED-DC` | PB4 | GPIO output |
-| `OLED-RES` | PB5 | GPIO output |
+| `OLED-DC` | PC2 | GPIO output |
+| `OLED-RES` | PC1 | GPIO output |
 | `USR-ENC-A` | PB6 | TIM4_CH1 (AF2) |
 | `USR-ENC-B` | PB7 | TIM4_CH2 (AF2) |
-| `USR-ENC-SW` | PB3 | GPIO EXTI |
+| `USR-ENC-SW` | PB4 | GPIO EXTI |
 | `USR-POT-1` | PC0 | ADC1_IN10 |
 
 The OLED uses its own SPI1 bus on PA5/PA7 — no pins are shared
-with the DAC8552 (SPI2, PB13/PB15). PA5 is also the onboard
-DAC1 output pin, but DAC1 is not used (all CV goes through the
-external DAC8552). PA6 (SPI1_MISO) is not needed since the display
-is write-only; PA6 remains allocated to Gate B (TIM3_CH1).
-PB6/PB7 displace I2C1's default pins, but I2C1 remaps to PB8/PB9
-(both free) if needed.
+with the DAC8552 (SPI2, PB13/PB15). OLED-DC and OLED-RES moved
+to PC1/PC2 to free PB4/PB5 for the encoder switch and I2S3_SD.
+PA6 (SPI1_MISO) is not needed since the display is write-only;
+PA6 remains allocated to Gate B (TIM3_CH1). PB6/PB7 provide TIM4 hardware encoder mode (CH1/CH2), same as
+the original assignment. I2C1 remaps to PB8/PB9 if needed.
 
 **Remaining reserve ADC pool** after pot allocation: PC1, PC2, PC3,
 PC4, PC5, PB0 — six ADC-capable pins for future expansion

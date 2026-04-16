@@ -19,7 +19,7 @@ int32_t encoder_get_delta(void);
 /* Returns a pending button event, or ENC_BTN_NONE. Consumes the event. */
 encoder_btn_event_t encoder_get_button_event(void);
 
-/* Called from EXTI3 ISR (falling edge of PB3). */
+/* Called from EXTI4 ISR (falling edge of PB4). */
 void encoder_button_isr(void);
 
 /* Called from main loop on each tick (~1 ms) to time long-press and debounce. */

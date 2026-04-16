@@ -68,7 +68,7 @@ void encoder_button_isr(void)
 
 /* Called from SysTick at 1 kHz. Handles:
  *  - debounce window after press
- *  - detecting release (poll PB3 level)
+ *  - detecting release (poll PB4 level)
  *  - firing long-press while still held
  *  - firing short-press on release
  */

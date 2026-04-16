@@ -30,12 +30,13 @@ Source references:
 ## 2. STM32F405 pin allocation
 
 I2S2 is unavailable (PB12-PB15 belong to SPI2 DAC8552 + OLED CS). The
-PCM5102A is driven from **I2S3** on PC10 / PC12 / PA15.
+PCM5102A is driven from **I2S3** on PB3 / PB5 / PA15 (alternate pins,
+freeing PC10/PC12 for the onboard SDIO MicroSD slot).
 
 | PCM5102A pin | Net name | STM32 pin | Peripheral / AF |
 |---|---|---|---|
-| 13 BCK | `I2S3_BCK` | **PC10** | SPI3/I2S3_CK (AF6) |
-| 14 DIN | `I2S3_SD` | **PC12** | SPI3/I2S3_SD (AF6) |
+| 13 BCK | `I2S3_BCK` | **PB3** | SPI3/I2S3_CK (AF6) |
+| 14 DIN | `I2S3_SD` | **PB5** | SPI3/I2S3_SD (AF6) |
 | 15 LRCK | `I2S3_WS` | **PA15** | SPI3/I2S3_WS (AF6) |
 | 17 XSMT | `~MUTE` | **PC6** | GPIO output, push-pull |
 
@@ -71,8 +72,8 @@ PC10, PC12, PA15, and PC6 as consumed by the audio DAC.
 | 10 | DEMP | GND (de-emphasis disabled) |
 | 11 | FLT | GND (normal-latency filter) |
 | 12 | SCK | GND (internal PLL mode) |
-| 13 | BCK | `I2S3_BCK` -> STM32 PC10 |
-| 14 | DIN | `I2S3_SD` -> STM32 PC12 |
+| 13 | BCK | `I2S3_BCK` -> STM32 PB3 |
+| 14 | DIN | `I2S3_SD` -> STM32 PB5 |
 | 15 | LRCK | `I2S3_WS` -> STM32 PA15 |
 | 16 | FMT | GND (I2S format) |
 | 17 | XSMT | `~MUTE` -> STM32 PC6 |
