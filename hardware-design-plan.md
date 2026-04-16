@@ -35,7 +35,7 @@
 | 7 (DAT0) | `SDIO_D0` | PC8 | SDIO_D0 (AF12) |
 | 8 (DAT1) | `SDIO_D1` | PC9 | SDIO_D1 (AF12) |
 
-Card detect: insert switch pulls PA8 low when card is present; R12 10 kΩ pull-up to VDD33 holds PA8 high when empty. Firmware reads PA8 as GPIO input (active-low = card inserted).
+Card detect: NC (normally-closed) switch on MicroSD slot connects PA8 to GND when no card is present; inserting a card opens the switch. Internal pull-up on PA8 pulls it HIGH when the switch opens. Firmware reads PA8 as GPIO input with pull-up (HIGH = card inserted, LOW = no card).
 
 On-board R11 100 kΩ pull-up on CD/DAT3 (PC11) keeps DAT3 high during card insertion to prevent spurious SPI-mode entry
 - **SWD debug header** on PA13/PA14 — leave accessible for firmware development
@@ -54,7 +54,7 @@ The following pins are consumed by on-board hardware and must not be reassigned 
 | PA1 | `CV-IN-B` | ADC1_IN1 | CV modulation input B (see `cv-input.md`) |
 | PA2 | `CLK-IN` | TIM2_CH3 | Clock input capture (see `clock-input.md`) |
 | PA3 | `GATE-OUT-A` | TIM2_CH4 | Gate A output compare (see `gate-output.md`) |
-| PA8 | `SD_CD` | GPIO input | MicroSD card detect, active-low with 10 kΩ pull-up (WeAct board) |
+| PA8 | `SD_CD` | GPIO input | MicroSD card detect, NC switch with internal pull-up (HIGH = card inserted, LOW = no card) |
 | PA5 | `OLED-SPI-SCLK` | SPI1_SCK (AF5) | OLED dedicated bus (see `user-interface.md` §1) |
 | PA6 | `GATE-OUT-B` | TIM3_CH1 | Gate B output compare (see `gate-output.md`) |
 | PA7 | `OLED-SPI-MOSI` | SPI1_MOSI (AF5) | OLED dedicated bus (see `user-interface.md` §1) |
@@ -232,7 +232,7 @@ See `user-interface.md` for full wiring, decoupling, and firmware details.
 | `OLED-SPI-SCLK` | PA5 | SPI1_SCK (AF5) |
 | `GATE-OUT-B` | PA6 | TIM3_CH1 output compare |
 | `OLED-SPI-MOSI` | PA7 | SPI1_MOSI (AF5) |
-| `SD_CD` | PA8 | GPIO input, 10 kΩ pull-up |
+| `SD_CD` | PA8 | GPIO input, internal pull-up (HIGH = card inserted) |
 | `I2S3_WS` | PA15 | I2S3_WS (AF6) |
 | `DAC-SPI-CS` | PB1 | GPIO output, active-low |
 | `I2S3_BCK` | PB3 | I2S3_CK (AF6) |
