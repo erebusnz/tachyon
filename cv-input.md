@@ -37,7 +37,7 @@ Source references:
 | Topology | Inverting summing attenuator, DC bias via non-inverting pin | Single-stage, single supply output, canonical bipolar→unipolar mapping |
 | Attenuation (voltage gain) | −0.330 | 10 V p-p input → 3.3 V p-p ADC swing; full 12-bit resolution across ±5 V |
 | DC bias source | REF5025 2.5 V → 2× 10 kΩ divider → non-inverting pin | Shares the precision reference already on board; matched resistors for tempco tracking |
-| Op-amp | OPA1642AIDR (dual JFET, RRO) | Same part family as U7/U10; 1 mV Vos, 5.1 nV/√Hz, high input Z suits 200 kΩ R_in |
+| Op-amp | OPA1642AIDR (dual JFET, RRO) | Same part family as U7/U16; 1 mV Vos, 5.1 nV/√Hz, high input Z suits 200 kΩ R_in |
 | Op-amp rails | ±12 V | Lets the stage handle the full input range without clipping before attenuation |
 | ADC sample | 12-bit, internal VREF+ = +3V3 (WeAct LDO) | F405 ADC1, single-ended, 56-cycle sample time |
 | Input protection | Passive — series R_in 100 kΩ limits fault current into op-amp; BAT54SLT1G clamp on ADC node | No diodes on jack tip; op-amp handles the heavy lifting |
@@ -163,7 +163,7 @@ it **U23** in the schematic. Rails
 are the existing `+12V` and `−12V` nets from `power-supply.md`.
 Decoupling: 100 nF 0805 at V+ and 100 nF 0805 at V−, each as close
 to the package pins as possible; one 10 µF bulk cap per rail is
-already provided by the OPA1642 clusters at U7/U10 (no need to
+already provided by the OPA1642 clusters at U7/U16 (no need to
 duplicate per op-amp — see `pcb-design.md`).
 
 ---
@@ -296,7 +296,7 @@ Items already in the BOM are noted; items to add are flagged.
 
 | Component | Designator | MPN / LCSC | New? |
 |---|---|---|---|
-| OPA1642AIDR dual op-amp | U23 | TI OPA1642AIDR / **C67640** | Reuse BOM line (already on board as U7/U10) |
+| OPA1642AIDR dual op-amp | U23 | TI OPA1642AIDR / **C67640** | Reuse BOM line (already on board as U7/U16) |
 | 100 kΩ 1 % 0805 ×2 | R24, R28 | Vishay CRCW0805100KFKEA / LCSC TODO | **Add** |
 | 33.0 kΩ 1 % 0805 ×2 | R31, R32 | Vishay CRCW080533K0FKEA / LCSC TODO | **Add** |
 | 1.0 kΩ 1 % 0805 ×2 | R25, R27 | existing 1 k line | Reuse |

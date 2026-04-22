@@ -12,10 +12,10 @@ rails defined here.
 ## 1. Power tree overview
 
 ```
-Eurorack +12V (P1) ──> D1 (SS14) ──> L1 (BLM21AG601SN1D ferrite) ──> C11 100uF || C9 100nF ──> +12V
+Eurorack +12V (P1) ──> D1 (SS14) ──> L1 (BLM21AG601SN1D ferrite) ──> C1 100uF || C3 100nF ──> +12V
                                                           │
                                                           ▼
-                                       TPS54202DDCR buck (U?)
+                                       TPS54202DDCR buck (U12)
                                                           │
                                                           ▼
                                                         +5V
@@ -23,24 +23,22 @@ Eurorack +12V (P1) ──> D1 (SS14) ──> L1 (BLM21AG601SN1D ferrite) ──>
                               ┌───────────────────────────┼───────────────────────────┐
                               ▼                           ▼                           ▼
                         WeAct VIN                  TPS7A2033PDBVR            TPS7A2033PDBVR
-                              │                          (LDO1)                    (LDO2)
+                              │                          (U14)                     (U15)
                               ▼                           │                           │
                        onboard 3V3 LDO                    ▼                           ▼
                               │                       +3V3_PREC                  +3V3_AUDIO
                               ▼                           │                           │
                       +3V3 (digital) ────┐                ▼                           ▼
                                          │            DAC8552 VDD          PCM5102A AVDD
-                                         │                                 PCM5102A CPVDD
+                                         │            REF5025 VIN          PCM5102A CPVDD
                                          ▼
                                 STM32F405, OLED,
                                 PCM5102A DVDD,
                                 logic, 74AHCT1G125
 
-                                       +5V ─────────────────────────────────> REF5025 VIN (precision 2.5 V reference)
+                                       +12V ────────────────────────────────> OPA1642 V+ (U7 CV buffers, U16 audio buffers)
 
-                                       +12V ────────────────────────────────> OPA1642 V+ (U7 CV buffers, U10 audio buffers)
-
-Eurorack -12V (P1) ──> D2 (SS14) ──> L2 (BLM21AG601SN1D ferrite) ──> C12 100uF || C10 100nF ──> -12V ──> OPA1642 V- (U7, U10)
+Eurorack -12V (P1) ──> D2 (SS14) ──> L2 (BLM21AG601SN1D ferrite) ──> C2 100uF || C4 100nF ──> -12V ──> OPA1642 V- (U7, U16)
 ```
 
 Notes:
@@ -69,15 +67,15 @@ Notes:
 | PCM5102A CPVDD | +3V3_AUDIO | 4.5 mA | 6 mA | Charge pump |
 | **Subtotal +3V3_AUDIO** | | **~22 mA** | **~26 mA** | TPS7A2033 #2 |
 | DAC8552 | +3V3_PREC | 0.5 mA | 1 mA | 2 × 155 µA quiescent + SPI switching |
-| **Subtotal +3V3_PREC** | | **~0.5 mA** | **~1 mA** | TPS7A2033 #1 — very lightly loaded |
-| REF5025 | +5V | 1 mA | 1.5 mA | Precision Vref; needs VIN ≥ 3.0 V so it cannot share `+3V3_PREC` |
+| REF5025 | +3V3_PREC | 1 mA | 1.5 mA | Precision Vref; 0.6 V over VS_min = 2.7 V (datasheet §6.5). Moved onto `+3V3_PREC` so U2 can sit next to U6 and keep the `VREF_2V5` trace < 20 mm |
+| **Subtotal +3V3_PREC** | | **~1.5 mA** | **~2.5 mA** | TPS7A2033 #1 — still very lightly loaded (< 1 % of 300 mA capability) |
 | TPS7A2033 ×2 quiescent | +5V | 0.05 mA | -- | Negligible |
-| **Total +5V load** | | **~135 mA** | **~225 mA** | Buck must supply this (STM32 + OLED + PCM5102A + LDO1/2 + REF5025) |
+| **Total +5V load** | | **~134 mA** | **~224 mA** | Buck must supply this (STM32 + OLED + PCM5102A + U14/U15 in) |
 | OPA1642 (U7, dual)  | +12V | 3.6 mA | 4.6 mA | CV output buffers; 2 × 1.8 mA typ / 2.3 mA max quiescent (`OPA1642.md:48`) |
-| OPA1642 (U10, dual) | +12V | 3.6 mA | 4.6 mA | Audio output buffers (PCM5102A → jacks, gain ×1.68) |
+| OPA1642 (U16, dual) | +12V | 3.6 mA | 4.6 mA | Audio output buffers (PCM5102A → jacks, gain ×1.68) |
 | **Total +12V load** | | **~143 mA** | **~235 mA** | Buck input current + both OPA1642 V+ quiescent; dominated by the buck |
 | OPA1642 (U7, dual)  | -12V | 3.6 mA | 4.6 mA | CV output buffers, V- side |
-| OPA1642 (U10, dual) | -12V | 3.6 mA | 4.6 mA | Audio output buffers, V- side |
+| OPA1642 (U16, dual) | -12V | 3.6 mA | 4.6 mA | Audio output buffers, V- side |
 | **Total -12V load** | | **~7 mA** | **~10 mA** | Output stages only — no other -12 V loads on the board |
 
 The TPS54202's 2 A rating gives ~9× headroom over peak load -- the buck
@@ -113,51 +111,51 @@ resistors. WEBENCH uses Vref = 0.600 V (nominal; the datasheet lists
 0.596 V typ, min 0.584, max 0.608). Vout in sim calculates to
 **0.600 V × (1 + 97.6 k / 13.3 k) = 5.003 V**.
 
-Note: with R_FBT = 100 k the nearest E96 pair is 100 k / 13.7 k (4.96 V
+Note: with R7 = 100 k the nearest E96 pair is 100 k / 13.7 k (4.96 V
 in sim) or 100 k / 13.3 k (5.11 V); neither hits 5.00 V. Moving to
-R_FBT = 97.6 k / R_FBB = 13.3 k lands within 3 mV of target -- the best
+R7 = 97.6 k / R8 = 13.3 k lands within 3 mV of target -- the best
 E96 pair available. Real-world Vout will shift by the Vref tolerance
 (±2 %), which dominates over divider error regardless of the pair
-chosen. The feed-forward zero shifts by ~2 % (R_FBT moves from 100 k to
-97.6 k), which is negligible for loop response -- C_FF stays at 68 pF.
+chosen. The feed-forward zero shifts by ~2 % (R7 moves from 100 k to
+97.6 k), which is negligible for loop response -- C7 stays at 68 pF.
 
 **Validated in TI WEBENCH sim:** Vout avg 5.03 V (previous 90.9 k /
 12.3 k divider -- being replaced by 97.6 k / 13.3 k), startup 4.61 ms.
 WEBENCH reports **peak inductor current ~1.70 A during the startup
 inrush transient** (19 % margin vs the DFE252012F-4R7M 2.1 A Isat).
-Steady-state DCM peak is much lower -- see the L_BUCK note below for
+Steady-state DCM peak is much lower -- see the L3 note below for
 the ripple calculation.
 
 | Ref | Value | Package | MPN (WEBENCH) | Notes |
 |---|---|---|---|---|
-| C_BUCK_IN | 10 uF / 25 V ±10 % | 0805 X5R | Murata GRM21BR61E106KA73L (LCSC **C84416**) | Input cap per WEBENCH. Place ≤ 2 mm from VIN/GND |
-| C_BOOT | 100 nF / 25 V | 0805 | AVX 08053C104KAT2A | BOOT-SW cap; reuse BOM line 1 (0805 100 nF) |
-| L_BUCK | 4.7 uH ±20 % / Isat 2.1 A / Irms 1.5 A | 2520 metric (2.5×2.0 mm) shielded | Murata `DFE252012F-4R7M=P2` (LCSC **C668313**) | DCR 190 mΩ max (160 mΩ typ); metal-alloy shielded. Isat at ΔL/L = 30 %; Irms at ΔT = 40 °C |
-| R_FBT (R_FB1) | 97.6 k 1 % | 0805 | Vishay CRCW080597K6FKEA | Feedback divider top; sets Vout = 5.00 V with R_FBB |
-| R_FBB (R_FB2) | 13.3 k 1 % | 0805 | Vishay CRCW080513K3FKEA | Feedback divider bottom |
-| C_FF | 68 pF / 50 V ±1 % | 0805 NP0 | YAGEO CC0805FRNPO9BN680 (LCSC **C541517**) | Feed-forward across R_FBT, improves loop response |
-| C_BUCK_OUT | 47 uF / 16 V | 1210 X5R | Murata GRM32ER61C476KE15L | Output bulk; ESR ~3 mΩ |
+| C5 | 10 uF / 25 V ±10 % | 0805 X5R | Murata GRM21BR61E106KA73L (LCSC **C84416**) | Input cap per WEBENCH. Place ≤ 2 mm from VIN/GND |
+| C6 | 100 nF / 25 V | 0805 | AVX 08053C104KAT2A | BOOT-SW cap; reuse BOM line 1 (0805 100 nF) |
+| L3 | 4.7 uH ±20 % / Isat 2.1 A / Irms 1.5 A | 2520 metric (2.5×2.0 mm) shielded | Murata `DFE252012F-4R7M=P2` (LCSC **C668313**) | DCR 190 mΩ max (160 mΩ typ); metal-alloy shielded. Isat at ΔL/L = 30 %; Irms at ΔT = 40 °C |
+| R7 | 97.6 k 1 % | 0805 | Vishay CRCW080597K6FKEA | Feedback divider top; sets Vout = 5.00 V with R8 |
+| R8 | 13.3 k 1 % | 0805 | Vishay CRCW080513K3FKEA | Feedback divider bottom |
+| C7 | 68 pF / 50 V ±1 % | 0805 NP0 | YAGEO CC0805FRNPO9BN680 (LCSC **C541517**) | Feed-forward across R7, improves loop response |
+| C8 | 47 uF / 16 V | 1210 X5R | Murata GRM32ER61C476KE15L | Output bulk; ESR ~3 mΩ |
 
 **Substitutions and assembly notes:**
 
-- **C_FF (feed-forward cap):** WEBENCH proposed an 0201 part. **Bumped to
+- **C7 (feed-forward cap):** WEBENCH proposed an 0201 part. **Bumped to
   0805** for hand assembly / rework. Any C0G/NP0 68 pF 0805 25 V works --
   the exact MPN doesn't matter as long as the dielectric is C0G.
-- **R_FBT / R_FBB:** WEBENCH used 0402. Bumped to **0805** to match the
+- **R7 / R8:** WEBENCH used 0402. Bumped to **0805** to match the
   rest of the board and to keep hand-soldering manageable. Keep the
   **exact resistance values** (97.6 k and 13.3 k, 1 %) -- do not round
   to standard E12 values; the divider math depends on these, and any
   substitution will move Vout off 5.00 V.
-- **C_BUCK_IN:** WEBENCH specifies a **10 µF** input cap at the buck
+- **C5:** WEBENCH specifies a **10 µF** input cap at the buck
   VIN. The existing 10 µF 0805 in BOM line 2 is rated for the WeAct
   supply context only and its voltage rating is not guaranteed for
   +12 V plus hot-plug transients. Add a dedicated 10 µF / **25 V**
   X5R/X7R 0805 cap as a new BOM line -- do not reuse BOM line 2.
-- **C_BUCK_OUT:** 47 uF 1210 is a chunky cap; this is what gives the
+- **C8:** 47 uF 1210 is a chunky cap; this is what gives the
   buck its low output ripple. Don't substitute a smaller cap to save
   area -- if 1210 is too big, the alternative is 2× 22 uF 0805 in
   parallel (re-run WEBENCH to confirm stability).
-- **L_BUCK:** chosen part is Murata `DFE252012F-4R7M=P2` (LCSC C668313).
+- **L3:** chosen part is Murata `DFE252012F-4R7M=P2` (LCSC C668313).
   Higher DCR (190 mΩ max, 160 mΩ typ) than the WEBENCH reference NIC
   part (80 mΩ), but at our 225 mA peak load the I²R loss is only ~10 mW
   -- negligible. Ratings: **Isat 2.1 A** (ΔL/L = 30 %) and **Irms 1.5 A**
@@ -180,28 +178,28 @@ are defined in **`pcb-design.md`** -- read that document first. The
 rules below are the power-supply-specific additions that sit on top of
 the general PCB layout strategy.
 
-- Keep the input loop (C_BUCK_IN → VIN → GND → C_BUCK_IN) as small as
+- Keep the input loop (C5 → VIN → GND → C5) as small as
   possible -- this is the noisiest loop on the board. Target ≤ 5 mm²
-  loop area on L1, with the GND return via dropping straight to the
-  L2 plane next to the cap pad.
+  loop area on Layer 1, with the GND return via dropping straight to
+  the Layer 2 plane next to the cap pad.
 - Place the buck in **Zone A** (see `pcb-design.md` §5), in the corner
   furthest from U3 (PCM5102A) and U2 (REF5025). ≥ 30 mm separation
   target.
 - Both TPS7A2033 LDOs sit on the Zone A / Zone C border so the +5 V
   feed stays in Zone A and only the regulated 3V3 rails enter Zone C.
-- Route +5 V to the LDO inputs and the WeAct VIN as an L3 pour region
-  where possible; where a trace is needed, use ≥ 0.6 mm to minimize
-  IR drop.
-- The output ripple should be < 50 mV after C_BUCK_OUT; the downstream
+- Route +5 V to the LDO inputs and the WeAct VIN as a Layer 3 pour
+  region where possible; where a trace is needed, use ≥ 0.6 mm to
+  minimize IR drop.
+- The output ripple should be < 50 mV after C8; the downstream
   TPS7A2033 LDOs then contribute rail-noise rejection in the audio
   band (PSRR ~60 dB @ 1 kHz, dropping with frequency). The LDO does
   **not** rely on its PSRR at the buck's 500 kHz fundamental -- that
-  ripple is handled by C_BUCK_OUT and by the LDO's own output cap
+  ripple is handled by C8 and by the LDO's own output cap
   acting as an HF shunt.
 - There is **no separate AGND net** and **no star-point tie** in this
-  design. L2 is one continuous ground plane; partitioning between
+  design. Layer 2 is one continuous ground plane; partitioning between
   analog and digital return currents is handled by component placement
-  on L1 (see `pcb-design.md` §3 and §5). Do not cut L2.
+  on Layer 1 (see `pcb-design.md` §3 and §5). Do not cut Layer 2.
 
 ---
 
@@ -211,25 +209,34 @@ Two **identical** TPS7A2033PDBVR low-noise LDOs hang off the +5 V rail.
 
 | Designator | MPN | LCSC | Package | Vin | Vout | Iout | Noise |
 |---|---|---|---|---|---|---|---|
-| LDO1 | TPS7A2033PDBVR | C2862740 | SOT-23-5 | 4.5–6.5 V | 3.3 V fixed | 300 mA | 4 uVRMS |
-| LDO2 | TPS7A2033PDBVR | C2862740 | SOT-23-5 | 4.5–6.5 V | 3.3 V fixed | 300 mA | 4 uVRMS |
+| U14 | TPS7A2033PDBVR | C2862740 | SOT-23-5 | 4.5–6.5 V | 3.3 V fixed | 300 mA | 4 uVRMS |
+| U15 | TPS7A2033PDBVR | C2862740 | SOT-23-5 | 4.5–6.5 V | 3.3 V fixed | 300 mA | 4 uVRMS |
 
-**LDO1 → `+3V3_PREC`** feeds: **DAC8552 VDD only.** The REF5025 runs
-directly from `+5V` (it needs VIN ≥ 3.0 V, so `+3V3_PREC`'s 3.3 V is
-too marginal — see `cv-output-dac.md` §4). The OPA1642 output buffers
-run from ±12 V, not `+3V3_PREC`. Consequently LDO1 is very lightly
-loaded (< 1 mA), but the part is kept identical to LDO2 for BOM
-simplicity and because its 4 µVRMS noise floor directly sets the
-DAC8552's rail noise.
+**U14 → `+3V3_PREC`** feeds: **DAC8552 VDD and REF5025 VIN.** The
+REF5025 was moved from `+5V` onto this LDO rail so U2 could be placed
+directly adjacent to U6, keeping the `VREF_2V5` trace under the 20 mm
+spec limit in `cv-output-dac.md` §6. `+3V3_PREC` at 3.3 V sits 0.6 V
+above the REF5025's VS_min = 2.7 V hard floor (datasheet §6.5) — within
+spec, and the TPS7A2033 is still < 1 % loaded (~2.5 mA peak against its
+300 mA capability) so headroom for LDO transient response is ample.
+The OPA1642 output buffers run from ±12 V, not `+3V3_PREC`. U14's
+4 µVRMS noise floor directly sets the DAC8552's rail noise and the
+REF5025's VIN noise; both parts then contribute their own line regulation
+(≤ 3 ppm/V on the REF5025) so the shared rail is a non-issue for
+precision.
 
-**LDO2 → `+3V3_AUDIO`** feeds: PCM5102A AVDD (pin 18) and CPVDD (pin 12).
+**U15 → `+3V3_AUDIO`** feeds: PCM5102A AVDD (pin 18) and CPVDD (pin 12).
 
-Per-LDO support components (×2):
+Per-LDO support components:
 
-| Ref | Value | Package | Net | Notes |
-|---|---|---|---|---|
-| C_LDOx_IN | 1 uF | 0805 X7R | VIN -- GND | Close to pin 1 |
-| C_LDOx_OUT | 1 uF | 0805 X7R | VOUT -- GND | Close to pin 5; ceramic-stable |
+| Ref | Value | Package | LDO | Net | Notes |
+|---|---|---|---|---|---|
+| C9  | 1 uF  | 0805 X7R | U14 | VIN -- GND  | Close to pin 1 |
+| C10 | 10 nF | 0805 X7R | U14 | VOUT -- GND | HF bypass on OUT |
+| C11 | 1 uF  | 0805 X7R | U14 | VOUT -- GND | Close to pin 5; ceramic-stable |
+| C12 | 1 uF  | 0805 X7R | U15 | VIN -- GND  | Close to pin 1 |
+| C13 | 10 nF | 0805 X7R | U15 | VOUT -- GND | HF bypass on OUT |
+| C14 | 1 uF  | 0805 X7R | U15 | VOUT -- GND | Close to pin 5; ceramic-stable |
 
 The 5 V → 3.3 V drop dissipates only ~40 mW per LDO -- thermals are a
 non-issue.
@@ -320,22 +327,22 @@ DC loss: at peak +12 V draw (~135 mA through the buck plus ~5 mA for
 the OPA1642 V+ quiescent, well under 250 mA total) the 0.15 Ω DCR drops
 < 40 mV -- negligible.
 
-### 6.4 Input bulk and HF bypass (C9–C12)
+### 6.4 Input bulk and HF bypass (C1–C4)
 
 Downstream of each ferrite, each rail is decoupled by a parallel pair:
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| C11 | 100 µF | electrolytic or bulk ceramic | +12 V | Bulk energy reservoir, absorbs hot-plug inrush and supplies the buck input loop |
-| C9  | 100 nF | 0805 X7R | +12 V | HF bypass, parallel to C11 |
-| C12 | 100 µF | electrolytic or bulk ceramic | -12 V | Bulk reservoir for the OPA1642 V- stage |
-| C10 | 100 nF | 0805 X7R | -12 V | HF bypass, parallel to C12 |
+| C1 | 100 µF | electrolytic or bulk ceramic | +12 V | Bulk energy reservoir, absorbs hot-plug inrush and supplies the buck input loop |
+| C3 | 100 nF | 0805 X7R | +12 V | HF bypass, parallel to C1 |
+| C2 | 100 µF | electrolytic or bulk ceramic | -12 V | Bulk reservoir for the OPA1642 V- stage |
+| C4 | 100 nF | 0805 X7R | -12 V | HF bypass, parallel to C2 |
 
-C11 and C12 are the true bulk reservoirs for the ±12 V rails and
-complete the LC filter with L1/L2. C9 and C10 handle the high-frequency
-bypass that the bulk caps' ESL cannot. Note that **C_BUCK_IN (10 µF /
+C1 and C2 are the true bulk reservoirs for the ±12 V rails and
+complete the LC filter with L1/L2. C3 and C4 handle the high-frequency
+bypass that the bulk caps' ESL cannot. Note that **C5 (10 µF /
 25 V) is still required locally at the TPS54202 VIN pin** (§3) --
-C11 is the bulk reservoir for the +12 V rail as a whole, not a
+C1 is the bulk reservoir for the +12 V rail as a whole, not a
 substitute for the buck's dedicated input cap.
 
 ---
@@ -346,21 +353,22 @@ Items already in the existing BOM are noted; items to add are flagged.
 
 | Component | Designator (proposed) | MPN / LCSC | New? |
 |---|---|---|---|
-| TPS54202DDCR buck | U?? (next free) | TI / **C191884** | **Add** |
-| TPS7A2033PDBVR LDO ×2 | U??, U?? | TI / **C2862740** | **Add (×2)** |
-| 4.7 uH shielded inductor (2520 metric) | L_BUCK | Murata DFE252012F-4R7M=P2 / **C668313** | **Add** |
-| 47 uF 16 V 1210 X5R | C_BUCK_OUT | Murata GRM32ER61C476KE15L -- LCSC TODO | **Add** |
-| 10 uF 25 V 0805 X5R | C_BUCK_IN | Murata GRM21BR61E106KA73L / **C84416** | **Add** |
-| 100 nF 0805 | C_BOOT, LDO in/out HF caps (if used) | C1711 (existing line 1) | Reuse |
-| 1 uF 0805 X7R | C_LDO1_IN, C_LDO1_OUT, C_LDO2_IN, C_LDO2_OUT | YAGEO CC0805KKX7R9BB105 / **C91185** | **Add** |
-| 97.6 k 1 % 0805 | R_FBT | Vishay CRCW080597K6FKEA / **C2077571** | **Add** |
-| 13.3 k 1 % 0805 | R_FBB | Vishay CRCW080513K3FKEA / **C4359485** (or **C4309412**) | **Add** |
-| 68 pF NP0 50 V ±1 % 0805 | C_FF | YAGEO CC0805FRNPO9BN680 / **C541517** | **Add** |
+| TPS54202DDCR buck | U12 | TI / **C191884** | **Add** |
+| TPS7A2033PDBVR LDO ×2 | U14, U15 | TI / **C2862740** | **Add (×2)** |
+| 4.7 uH shielded inductor (2520 metric) | L3 | Murata DFE252012F-4R7M=P2 / **C668313** | **Add** |
+| 47 uF 16 V 1210 X5R | C8 | Murata GRM32ER61C476KE15L -- LCSC TODO | **Add** |
+| 10 uF 25 V 0805 X5R | C5 | Murata GRM21BR61E106KA73L / **C84416** | **Add** |
+| 100 nF 0805 | C6, LDO in/out HF caps (if used) | C1711 (existing line 1) | Reuse |
+| 1 uF 0805 X7R | C9, C11, C12, C14 | YAGEO CC0805KKX7R9BB105 / **C91185** | **Add** |
+| 10 nF 0805 X7R | C10, C13 | Existing BOM 10 nF line | Reuse |
+| 97.6 k 1 % 0805 | R7 | Vishay CRCW080597K6FKEA / **C2077571** | **Add** |
+| 13.3 k 1 % 0805 | R8 | Vishay CRCW080513K3FKEA / **C4359485** (or **C4309412**) | **Add** |
+| 68 pF NP0 50 V ±1 % 0805 | C7 | YAGEO CC0805FRNPO9BN680 / **C541517** | **Add** |
 | Ferrite bead 600 Ω @ 100 MHz ×2 | L1, L2 | Murata BLM21AG601SN1D -- LCSC TODO | **Add (×2)** |
 | PTC resettable fuse 500 mA 30 V 0805 | F1 | TECHFUSE SMD0805-050-30V / **C42924282** | **Add** |
 | PTC resettable fuse 200 mA 30 V 0805 | F2 | TECHFUSE SMD0805-020-30V / **C6851465** | **Add** |
-| 100 µF bulk cap ×2 | C11, C12 | ±12 V bulk -- MPN/LCSC TODO | **Add (×2)** |
-| 100 nF 0805 ×2 | C9, C10 | C1711 (existing line 1) | Reuse |
+| 100 µF bulk cap ×2 | C1, C2 | ±12 V bulk -- MPN/LCSC TODO | **Add (×2)** |
+| 100 nF 0805 ×2 | C3, C4 | C1711 (existing line 1) | Reuse |
 | SS14 Schottky ×2 | D1, D2 | SS14 (existing BOM line) | Reuse |
 
 ---

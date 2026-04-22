@@ -55,8 +55,10 @@ decoupling BOMs:
 ### Physical design
 
 - **[pcb-design.md](pcb-design.md)** — PCB stackup, ground plane
-  rules (one continuous L2 plane, no splits), power pour regions,
+  rules (one continuous Layer 2 plane, no splits), power pour regions,
   placement zones, and signal routing guidance.
+
+  ![Backing PCB 3D render](backing-pcb-3d.png)
 
 ### Bring-up
 

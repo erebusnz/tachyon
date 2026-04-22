@@ -179,7 +179,7 @@ Items already provided by the WeAct core board are marked accordingly.
 | External ADC | Precision CV input | SPI/I2C | No — F405 built-in ADC is sufficient |
 | DAC8552IDGKR (16-bit dual DAC) | CV outputs | SPI2 (dedicated) | **Yes** |
 | OPA1642AIDR (dual JFET, RRO, LCSC C67640) | DAC output buffering + ×4 gain to 0–10 V | Analog | **Yes** |
-| REF5025IDR (precision 2.5 V ref) | DAC VREF, powered from +5V | — | **Yes** (for pitch accuracy) |
+| REF5025IDR (precision 2.5 V ref) | DAC VREF, powered from +3V3_PREC | — | **Yes** (for pitch accuracy) |
 | Low-noise analog LDO | Separate analog 3.3V rail for ADC/DAC | — | **Yes** |
 | PCM5102APWR | Audio I2S output (see `audio-output-dac.md`) | I2S3 | **Yes** |
 | SSD1327 OLED 1.5″ 128×128 4-bit grayscale | Menu / status display | SPI1 (dedicated) | **Yes** |

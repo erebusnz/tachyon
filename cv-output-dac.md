@@ -72,52 +72,60 @@ The REF5025 and OPA1642 consume **no MCU pins** — both are purely analog.
 
 | Pin | Name | Connection |
 |---|---|---|
-| 1 | VDD | `+3V3_PREC` via independent decoupling (C_VDD1 + C_VDD2) |
-| 2 | VREF | `VREF_2V5` from U2 (REF5025) pin 6, decoupled with C_VREF |
-| 3 | VOUTB | To U7.2 +IN B (pin 5) — channel B raw output, 0–2.5 V |
-| 4 | VOUTA | To U7.1 +IN A (pin 3) — channel A raw output, 0–2.5 V |
+| 1 | VDD | `+3V3_PREC` via C18 (1 µF) + C19 (100 nF) decoupling |
+| 2 | VREF | `VREF_2V5` from U2 (REF5025) pin 6, decoupled with C20 (1 µF) + C21 (100 nF) |
+| 3 | VOUTB | To U7.1 +IN A (pin 3) — drives **CV-OUT-A** jack (channels cross-wired — see note below) |
+| 4 | VOUTA | To U7.2 +IN B (pin 5) — drives **CV-OUT-B** jack (channels cross-wired — see note below) |
 | 5 | SYNC | `DAC-SPI-CS` → STM32 PB1 |
 | 6 | SCLK | `DAC-SPI-SCLK` → STM32 PB13 (shared SPI2 SCK) |
 | 7 | DIN | `DAC-SPI-MOSI` → STM32 PB15 (shared SPI2 MOSI) |
-| 8 | GND | GND (L2 plane) |
+| 8 | GND | GND (Layer 2 plane) |
+
+> **Channel swap (PCB-placement driven):** DAC8552 `VOUTA` (pin 4) feeds the
+> CV-OUT-**B** jack via U7.2, and `VOUTB` (pin 3) feeds the CV-OUT-**A** jack
+> via U7.1. Firmware must therefore set DB[21] = **1** (DAC channel B) to
+> drive the physical CV-OUT-A jack, and DB[21] = **0** (DAC channel A) for
+> CV-OUT-B. The bit flip lives in the DAC driver; the `cv_cal[]` table in
+> `calibration.md` remains indexed by physical jack (0 = CV-OUT-A,
+> 1 = CV-OUT-B) so calibration and user-facing menus are unaffected.
 
 ### U2 — REF5025IDR (SOIC-8)
 
 | Pin | Name | Connection |
 |---|---|---|
-| 1 | VIN | `+5V` (Eurorack) via C_REF_IN decoupling |
-| 2 | TRIM/NR | Noise-reduction cap C_NR (100 nF) to GND |
+| 1 | DNC | Do not connect (leave floating) |
+| 2 | VIN | `+3V3_PREC` via C15 decoupling |
 | 3 | TEMP | No connect (leave floating) |
-| 4 | GND | GND (L2 plane) |
-| 5 | GND | GND (L2 plane) |
-| 6 | VOUT | `VREF_2V5` → U6 DAC8552 pin 2 via C_VREF decoupling |
+| 4 | GND | GND (Layer 2 plane) |
+| 5 | TRIM/NR | Noise-reduction cap C17 (100 nF) to GND |
+| 6 | VOUT | `VREF_2V5` → U6 DAC8552 pin 2 via C16 decoupling |
 | 7 | NC | No connect |
-| 8 | EN | GND (tie to GND to enable, per `REF5025.md:73`) |
+| 8 | DNC | Do not connect (leave floating) |
 
 ### U7 — OPA1642AIDR (SOIC-8, dual)
 
-Channel A (U7.1) — DAC A → CV output A:
+U7.1 (OPA1642 unit A) — drives **CV-OUT-A** jack, fed from DAC8552 **VOUTB**:
 
 | Pin | Name | Connection |
 |---|---|---|
 | 1 | OUT A | CV_A net → R_PROT_A 1 kΩ → CV jack A tip; also → R1 (30 kΩ) feedback tap |
 | 2 | -IN A | Junction of R1 (30 kΩ to OUT A) and R2 (10 kΩ to GND) |
-| 3 | +IN A | U6 pin 4 (VOUTA) — DAC A raw output |
-| 4 | V- | `-12V` (Eurorack) via C_VN (100 nF + 10 µF bulk) |
+| 3 | +IN A | U6 pin 3 (VOUTB) — DAC channel B raw output |
+| 4 | V- | `-12V` (Eurorack) via C23 (100 nF) |
 
-Channel B (U7.2) — DAC B → CV output B:
+U7.2 (OPA1642 unit B) — drives **CV-OUT-B** jack, fed from DAC8552 **VOUTA**:
 
 | Pin | Name | Connection |
 |---|---|---|
-| 5 | +IN B | U6 pin 3 (VOUTB) — DAC B raw output |
+| 5 | +IN B | U6 pin 4 (VOUTA) — DAC channel A raw output |
 | 6 | -IN B | Junction of R3 (30 kΩ to OUT B) and R4 (10 kΩ to GND) |
 | 7 | OUT B | CV_B net → R_PROT_B 1 kΩ → CV jack B tip; also → R3 (30 kΩ) feedback tap |
-| 8 | V+ | `+12V` (Eurorack) via C_VP (100 nF + 10 µF bulk) |
+| 8 | V+ | `+12V` (Eurorack) via C22 (100 nF) |
 
-All "GND" connections above land on the single continuous L2 ground plane
-defined in `pcb-design.md` §3. There is no separate AGND / DGND net; the
-DAC8552 GND (pin 8) and REF5025 GNDs (pins 4, 5) each get their own via to
-L2 placed directly adjacent to the pin.
+All "GND" connections above land on the single continuous Layer 2
+ground plane defined in `pcb-design.md` §3. There is no separate AGND /
+DGND net; the DAC8552 GND (pin 8) and REF5025 GND (pin 4) each get
+their own via to Layer 2 placed directly adjacent to the pin.
 
 ---
 
@@ -130,7 +138,7 @@ lands on:
 | Part | Pin | Rail |
 |---|---|---|
 | U6 DAC8552 | VDD (pin 1) | `+3V3_PREC` |
-| U2 REF5025 | VIN (pin 1) | `+5V` (Eurorack; REF5025 needs VIN ≥ 3.0 V so it cannot share `+3V3_PREC`) |
+| U2 REF5025 | VIN (pin 2) | `+3V3_PREC` (0.6 V over the REF5025 VS_min = 2.7 V hard floor per datasheet §6.5; moved onto the LDO rail so U2 can sit next to U6 and keep the `VREF_2V5` trace < 20 mm per §6) |
 | U7 OPA1642 | V+ (pin 8) / V− (pin 4) | `+12V` / `−12V` (Eurorack) |
 
 ---
@@ -144,17 +152,18 @@ part where practical, with short fat traces to GND.
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| C_VDD1 | 10 µF | 0805 X5R/X7R | VDD (pin 1) – GND | Bulk on `+3V3_PREC` |
-| C_VDD2 | 100 nF | 0805 | VDD (pin 1) – GND | HF bypass, closest to pin |
-| C_VREF | 10 µF | 0805 X5R/X7R | VREF (pin 2) – GND | Required; reference input impedance is code-dependent, a low-impedance source is mandatory (`DAC8552.md:75`) |
+| C18 | 1 µF | 0805 X7R | VDD (pin 1) – GND | Bulk on `+3V3_PREC` |
+| C19 | 100 nF | 0805 | VDD (pin 1) – GND | HF bypass, closest to pin |
+| C20 | 1 µF | 0805 X7R | VREF (pin 2) – GND | Bulk on `VREF_2V5`; low-impedance source is mandatory (`DAC8552.md:75`) |
+| C21 | 100 nF | 0805 | VREF (pin 2) – GND | HF bypass, closest to pin |
 
-### U2 — REF5025 decoupling (per `REF5025.md:71,72`)
+### U2 — REF5025 decoupling (per `datasheets/REF5025.md` Application Notes)
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| C_REF_IN | 100 nF | 0805 | VIN (pin 1) – GND | HF bypass, close to pin |
-| C_REF_OUT | 10 µF | 0805 X5R/X7R | VOUT (pin 6) – GND | Stability + transient response |
-| C_NR | 100 nF | 0805 | TRIM/NR (pin 2) – GND | Broadband noise reduction; larger = quieter but slower startup |
+| C15 | 10 µF | 0805 X5R/X7R | VIN (pin 2) – GND  | Bulk + HF bypass on `+5V` feed, close to pin |
+| C16 | 10 µF | 0805 X5R/X7R | VOUT (pin 6) – GND | Stability + transient response |
+| C17 | 100 nF | 0805           | TRIM/NR (pin 5) – GND | Broadband noise reduction; larger = quieter but slower startup |
 
 ### U7 — OPA1642 decoupling + feedback network
 
@@ -162,10 +171,8 @@ Per-rail decoupling (OPA1642 sits on ±12 V; `OPA1642.md:102`):
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| C_VP1 | 10 µF | 0805 X5R/X7R | V+ (pin 8) – GND | Bulk on `+12V` |
-| C_VP2 | 100 nF | 0805 | V+ (pin 8) – GND | HF bypass, closest to pin |
-| C_VN1 | 10 µF | 0805 X5R/X7R | V− (pin 4) – GND | Bulk on `−12V` |
-| C_VN2 | 100 nF | 0805 | V− (pin 4) – GND | HF bypass, closest to pin |
+| C22 | 100 nF | 0805 X7R | V+ (pin 8) – GND | HF bypass on `+12V`, closest to pin. Bulk is handled by C1 at the input filter. |
+| C23 | 100 nF | 0805 X7R | V− (pin 4) – GND | HF bypass on `−12V`, closest to pin. Bulk is handled by C2 at the input filter. |
 
 Feedback network (×4 non-inverting gain, per `hardware-design-plan.md` §"Op-Amp Output Stage"):
 
@@ -205,7 +212,7 @@ protection resistors:
 
 - OUT A (U7 pin 1) → **R_PROT_A** 1 kΩ → CV jack A (tip)
 - OUT B (U7 pin 7) → **R_PROT_B** 1 kΩ → CV jack B (tip)
-- CV jack sleeves → GND (L2 plane)
+- CV jack sleeves → GND (Layer 2 plane)
 - Full-scale output: 0 V to +10 V unipolar (10 octaves at 1 V/oct)
 
 **Feedback tap placement is critical:** R1 (and R3) must tap at the
@@ -225,35 +232,35 @@ calibration at bring-up, alongside REF5025 tolerance, feedback-resistor
 tolerance, and OPA1642 Vos. No static gain error remains after
 calibration.
 
-Place U7 adjacent to U6 and keep the OUT→R_PROT→jack runs short and on L1
-with L2 as the reference plane. CV jacks belong in the front-panel I/O
-zone per `pcb-design.md` §5.
+Place U7 adjacent to U6 and keep the OUT→R_PROT→jack runs short and on
+Layer 1 with Layer 2 as the reference plane. CV jacks belong in the
+front-panel I/O zone per `pcb-design.md` §5.
 
 ---
 
 ## 6. Grounding
 
-Ground topology is defined globally in **`pcb-design.md`** — L2 is a
-single continuous GND plane, never split or cut, and partitioning between
-analog and digital return currents is handled by component placement on
-L1, not by copper topology.
+Ground topology is defined globally in **`pcb-design.md`** — Layer 2
+is a single continuous GND plane, never split or cut, and partitioning
+between analog and digital return currents is handled by component
+placement on Layer 1, not by copper topology.
 
 CV-path-specific notes on top of that:
 
-- **U6 DAC8552 pin 8 (GND)** drops directly to L2 via a via placed within
-  < 1 mm of the pin. Do not daisy-chain.
-- **U2 REF5025 pins 4 and 5 (GND)** each get their own via to L2. Pin 8
-  (EN) ties to the same GND net — a short local trace is acceptable here.
+- **U6 DAC8552 pin 8 (GND)** drops directly to Layer 2 via a via placed
+  within < 1 mm of the pin. Do not daisy-chain.
+- **U2 REF5025 pin 4 (GND)** gets its own via to Layer 2 placed within
+  < 1 mm of the pin. Pins 1, 7, and 8 (DNC/NC) are left floating.
 - **U7 OPA1642** has no dedicated GND pin; ground return for R2 and R4
-  (the 10 kΩ feedback ground legs) must land on L2 via a short trace
-  close to the op-amp. Route these two ground-leg vias adjacent to the
-  op-amp body, not back at the DAC or reference, so the feedback loop
-  sees a local low-impedance return.
+  (the 10 kΩ feedback ground legs) must land on Layer 2 via a short
+  trace close to the op-amp. Route these two ground-leg vias adjacent
+  to the op-amp body, not back at the DAC or reference, so the feedback
+  loop sees a local low-impedance return.
 - **VREF routing:** `VREF_2V5` from U2 pin 6 to U6 pin 2 is a
   code-dependent load (`DAC8552.md:75`). Keep this trace short (< 20 mm),
-  reasonably wide (0.3 mm+), and run it directly over L2 — do not let it
-  cross any split or any noisy corridor. C_REF_OUT (at U2) and C_VREF (at
-  U6) act as a distributed bypass along the trace.
+  reasonably wide (0.3 mm+), and run it directly over Layer 2 — do not
+  let it cross any split or any noisy corridor. C16 (at U2) and
+  C20 / C21 (at U6) act as a distributed bypass along the trace.
 - **+3V3_PREC routing:** feed U6 from the same LDO output node that feeds
   U2's decoupling area; do not star from the LDO with long separate runs.
 - **Feedback node shielding:** R1/R3 (−IN nodes) are high-impedance

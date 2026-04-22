@@ -22,7 +22,7 @@ Source references:
 | Soft mute | MCU GPIO (XSMT) | Firmware-controlled, shared global mute net |
 | DVDD supply | `+3V3` (digital) | LDO regulates to 1.8 V internally; LDOO decoupled |
 | AVDD / CPVDD supply | `+3V3_AUDIO` | Dedicated low-noise rail, see `power-supply.md` §4 |
-| Output buffer | OPA1642 (U10), gain ×1.68 | Lifts 2.1 VRMS DAC output to 10 Vpp Eurorack convention |
+| Output buffer | OPA1642 (U16), gain ×1.68 | Lifts 2.1 VRMS DAC output to 10 Vpp Eurorack convention |
 | Buffer supply | ±12 V | Direct from Eurorack rails; OPA1642 swings ground-centered |
 
 ---
@@ -60,15 +60,15 @@ PC10, PC12, PA15, and PC6 as consumed by the audio DAC.
 
 | Pin | Name | Connection |
 |---|---|---|
-| 1 | CPVDD | `+3V3_AUDIO` via independent decoupling |
-| 2 | CAPP | Flying cap to pin 4 (CAPM) -- C_FLY |
-| 3 | CPGND | GND (L2 plane) |
-| 4 | CAPM | Flying cap to pin 2 (CAPP) -- C_FLY |
-| 5 | VNEG | Decouple to GND -- C_VNEG |
-| 6 | OUTL | R_OUTL 470 R + C_OUTL 2.2 nF EMI filter -> U10A +IN (pin 3); buffer drives U17 |
-| 7 | OUTR | R_OUTR 470 R + C_OUTR 2.2 nF EMI filter -> U10B +IN (pin 5); buffer drives U18 |
-| 8 | AVDD | `+3V3_AUDIO` via independent decoupling |
-| 9 | AGND | GND (L2 plane) |
+| 1 | CPVDD | `+3V3_AUDIO` via C24 (100 nF) + C25 (10 µF) decoupling |
+| 2 | CAPP | Flying cap to pin 4 (CAPM) -- C27 (470 nF) |
+| 3 | CPGND | GND (Layer 2 plane) |
+| 4 | CAPM | Flying cap to pin 2 (CAPP) -- C27 (470 nF) |
+| 5 | VNEG | Decouple to GND -- C28 (1 µF) |
+| 6 | OUTL | R14 470 R + C32 2.2 nF EMI filter -> U16A +IN (pin 3); buffer drives U17 |
+| 7 | OUTR | R13 470 R + C33 2.2 nF EMI filter -> U16B +IN (pin 5); buffer drives U18 |
+| 8 | AVDD | `+3V3_AUDIO` via C30 (100 nF) + C31 (10 µF) decoupling |
+| 9 | AGND | GND (Layer 2 plane) |
 | 10 | DEMP | GND (de-emphasis disabled) |
 | 11 | FLT | GND (normal-latency filter) |
 | 12 | SCK | GND (internal PLL mode) |
@@ -77,14 +77,14 @@ PC10, PC12, PA15, and PC6 as consumed by the audio DAC.
 | 15 | LRCK | `I2S3_WS` -> STM32 PA15 |
 | 16 | FMT | GND (I2S format) |
 | 17 | XSMT | `~MUTE` -> STM32 PC6 |
-| 18 | LDOO | Decouple to GND -- C_LDOO |
-| 19 | DGND | GND (L2 plane) |
-| 20 | DVDD | `+3V3` (digital, WeAct LDO) via 100 nF |
+| 18 | LDOO | Decouple to GND -- C29 (1 µF) |
+| 19 | DGND | GND (Layer 2 plane) |
+| 20 | DVDD | `+3V3` (digital, WeAct LDO) via C26 (100 nF) |
 
-All "GND" pins above land on the single continuous L2 ground plane
-defined in `pcb-design.md` §3. There is no separate AGND / DGND / CPGND
-net; the PCM5102A's three ground pins (3 CPGND, 9 AGND, 19 DGND) each
-get their own via to L2 placed directly adjacent to the pin.
+All "GND" pins above land on the single continuous Layer 2 ground
+plane defined in `pcb-design.md` §3. There is no separate AGND / DGND /
+CPGND net; the PCM5102A's three ground pins (3 CPGND, 9 AGND, 19 DGND)
+each get their own via to Layer 2 placed directly adjacent to the pin.
 
 ---
 
@@ -111,18 +111,18 @@ where practical, with short fat traces to GND.
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| C_AVDD1 | 10 uF | 0805 X5R/X7R | AVDD (pin 8) -- GND | Bulk on `+3V3_AUDIO` |
-| C_AVDD2 | 100 nF | 0805 | AVDD (pin 8) -- GND | HF bypass, closest to pin |
-| C_CPVDD1 | 10 uF | 0805 X5R/X7R | CPVDD (pin 1) -- GND | Bulk on `+3V3_AUDIO` |
-| C_CPVDD2 | 100 nF | 0805 | CPVDD (pin 1) -- GND | HF bypass, closest to pin |
-| C_DVDD | 100 nF | 0805 | DVDD (pin 20) -- GND | On digital `+3V3` |
-| C_LDOO | 1 uF | 0805 X7R | LDOO (pin 18) -- GND | Required, do not omit |
-| C_VNEG | 1 uF | 0805 X7R | VNEG (pin 5) -- GND | Charge-pump output |
-| C_FLY | 470 nF | 0805 X7R | CAPP (pin 2) <-> CAPM (pin 4) | 220 nF-1 uF range; 470 nF nominal |
-| R_OUTL | 470 R | 0805 1% | OUTL (pin 6) -> node L | Series element of DAC-side EMI LPF |
-| R_OUTR | 470 R | 0805 1% | OUTR (pin 7) -> node R | Series element of DAC-side EMI LPF |
-| C_OUTL | 2.2 nF | 0805 NP0/C0G | node L -- GND | Shunt element; ~154 kHz LPF with R_OUTL |
-| C_OUTR | 2.2 nF | 0805 NP0/C0G | node R -- GND | Shunt element; ~154 kHz LPF with R_OUTR |
+| C31 | 10 uF | 0805 X5R/X7R | AVDD (pin 8) -- GND | Bulk on `+3V3_AUDIO` |
+| C30 | 100 nF | 0805 | AVDD (pin 8) -- GND | HF bypass, closest to pin |
+| C25 | 10 uF | 0805 X5R/X7R | CPVDD (pin 1) -- GND | Bulk on `+3V3_AUDIO` |
+| C24 | 100 nF | 0805 | CPVDD (pin 1) -- GND | HF bypass, closest to pin |
+| C26 | 100 nF | 0805 | DVDD (pin 20) -- GND | On digital `+3V3` |
+| C29 | 1 uF | 0805 X7R | LDOO (pin 18) -- GND | Required, do not omit |
+| C28 | 1 uF | 0805 X7R | VNEG (pin 5) -- GND | Charge-pump output |
+| C27 | 470 nF | 0805 X7R | CAPP (pin 2) <-> CAPM (pin 4) | 220 nF-1 uF range; 470 nF nominal |
+| R14 | 470 R | 0805 1% | OUTL (pin 6) -> node L | Series element of DAC-side EMI LPF |
+| R13 | 470 R | 0805 1% | OUTR (pin 7) -> node R | Series element of DAC-side EMI LPF |
+| C32 | 2.2 nF | 0805 NP0/C0G | node L -- GND | Shunt element; ~154 kHz LPF with R14 |
+| C33 | 2.2 nF | 0805 NP0/C0G | node R -- GND | Shunt element; ~154 kHz LPF with R13 |
 
 The board already stocks 100 nF 0805 (BOM line 1) and 10 uF 0805 (BOM line
 2); reuse those values to avoid adding line items. The 1 uF and 470 nF
@@ -130,69 +130,67 @@ The board already stocks 100 nF 0805 (BOM line 1) and 10 uF 0805 (BOM line
 
 ---
 
-## 5. Output stage: U10 buffer and jacks
+## 5. Output stage: U16 buffer and jacks
 
 PCM5102A is a DirectPath part: **no DC blocking capacitors** are required
 on OUTL/OUTR (`PCM5102A.md:93`). The outputs are ground-centered 2.1 VRMS
 full-scale (~5.94 Vpp), which is ~4.6 dB quieter than the Eurorack 10 Vpp
-convention. **U10 (OPA1642, dual)** is added as a stereo non-inverting
+convention. **U16 (OPA1642, dual)** is added as a stereo non-inverting
 buffer with gain ×1.68 to lift the output to exactly 10 Vpp full-scale.
 
 ### Signal chain (per channel)
 
 ```
-DAC OUTx ──> R_OUTx 470 R ──┬──> C_OUTx 2.2 nF ──> GND   (DAC-side EMI LPF, fc ~154 kHz)
-                            │
-                            └──> U10x +IN
-                                  │
-                                  └──> U10x OUT ──> R_SERx 1 k ──> Ux jack tip
-                                         │
-                       U10x -IN <─ R_FBx 6.8 k <┤
-                       U10x -IN ─> R_GNx 10 k ─> GND
+DAC OUTx ──> R14/R13 470 R ──┬──> C32/C33 2.2 nF ──> GND   (DAC-side EMI LPF, fc ~154 kHz)
+                             │
+                             └──> U16x +IN
+                                   │
+                                   └──> U16x OUT ──> R_SERx 1 k ──> Ux jack tip
+                                          │                (R_SERx on I/O board)
+                        U16x -IN <─ R11/R12 6.8 k <┤
+                        U16x -IN ─> R9/R10 10 k ─> GND
 ```
 
-Gain = 1 + R_FBx / R_GNx = 1 + 6.8 / 10 = **1.68×**.
+Gain = 1 + R_FB / R_GN = 1 + 6.8 / 10 = **1.68×**.
 Output full-scale: 2.1 VRMS × 1.68 = 3.53 VRMS = 9.99 Vpp ≈ ±5 V peak.
 
-### U10 (OPA1642, dual SOIC-8) pin assignment
+### U16 (OPA1642, dual SOIC-8) pin assignment
 
 | OPA1642 pin | Net | Notes |
 |---|---|---|
-| 1 OUT_A | `AUDIO_BUF_L` -> R_SERL -> U17 tip | Left channel output |
-| 2 -IN_A | Junction of R_FBL and R_GNL | Inverting input feedback node |
+| 1 OUT_A | `AUDIO_BUF_L` -> R_SERL -> U17 tip | Left channel output (R_SERL lives on the I/O board schematic) |
+| 2 -IN_A | Junction of R11 and R9 | Inverting input feedback node |
 | 3 +IN_A | node L (post DAC EMI filter) | Non-inverting input |
 | 4 V- | `-12V` | Decouple per §4a |
 | 5 +IN_B | node R (post DAC EMI filter) | Non-inverting input |
-| 6 -IN_B | Junction of R_FBR and R_GNR | Inverting input feedback node |
-| 7 OUT_B | `AUDIO_BUF_R` -> R_SERR -> U18 tip | Right channel output |
+| 6 -IN_B | Junction of R12 and R10 | Inverting input feedback node |
+| 7 OUT_B | `AUDIO_BUF_R` -> R_SERR -> U18 tip | Right channel output (R_SERR lives on the I/O board schematic) |
 | 8 V+ | `+12V` | Decouple per §4a |
 
-### U10 buffer passives BOM
+### U16 buffer passives BOM
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| R_FBL | 6.8 k 1% | 0805 | U10A OUT -- U10A -IN | Feedback top |
-| R_GNL | 10 k 1% | 0805 | U10A -IN -- GND | Feedback bottom (gain set) |
-| R_FBR | 6.8 k 1% | 0805 | U10B OUT -- U10B -IN | Feedback top |
-| R_GNR | 10 k 1% | 0805 | U10B -IN -- GND | Feedback bottom (gain set) |
-| R_SERL | 1 k 1% | 0805 | U10A OUT -- U17 tip | Eurorack 1 k output impedance convention |
-| R_SERR | 1 k 1% | 0805 | U10B OUT -- U18 tip | Eurorack 1 k output impedance convention |
-| C_U10_VPOS_BULK | 10 uF | 0805 X7R | +12V -- GND at U10 pin 8 | Bulk decoupling |
-| C_U10_VPOS_HF | 100 nF | 0805 X7R | +12V -- GND at U10 pin 8 | HF bypass, closest to pin |
-| C_U10_VNEG_BULK | 10 uF | 0805 X7R | -12V -- GND at U10 pin 4 | Bulk decoupling |
-| C_U10_VNEG_HF | 100 nF | 0805 X7R | -12V -- GND at U10 pin 4 | HF bypass, closest to pin |
+| R11 | 6.8 k 1% | 0805 | U16A OUT -- U16A -IN | Feedback top (left) |
+| R9 | 10 k 1% | 0805 | U16A -IN -- GND | Feedback bottom, left (gain set) |
+| R12 | 6.8 k 1% | 0805 | U16B OUT -- U16B -IN | Feedback top (right) |
+| R10 | 10 k 1% | 0805 | U16B -IN -- GND | Feedback bottom, right (gain set) |
+| R_SERL | 1 k 1% | 0805 | U16A OUT -- U17 tip | Eurorack 1 k output impedance convention. Placed on the I/O board schematic. |
+| R_SERR | 1 k 1% | 0805 | U16B OUT -- U18 tip | Eurorack 1 k output impedance convention. Placed on the I/O board schematic. |
+| C34 | 100 nF | 0805 X7R | +12V -- GND at U16 pin 8 | HF bypass, closest to pin. Bulk handled by C1 at input filter. |
+| C35 | 100 nF | 0805 X7R | -12V -- GND at U16 pin 4 | HF bypass, closest to pin. Bulk handled by C2 at input filter. |
 
 Reuse the existing 100 nF and 10 uF 0805 BOM lines. The 6.8 k, 10 k, and
 1 k 1 % 0805 resistors must be added to the BOM if not already present.
 
 ### Jacks
 
-- U17/U18 sleeve -> GND (L2 plane)
+- U17/U18 sleeve -> GND (Layer 2 plane)
 - U17/U18 switch (NC) terminals: leave floating unless used for jack-detect
 
-Keep OUTL/OUTR traces short from U3 to U10 +IN, route on L1 with L2 as
-the reference plane, and keep them clear of the I2S corridor
-(BCK/LRCK/DIN). U10 should sit between U3 and the output jacks in
+Keep OUTL/OUTR traces short from U3 to U16 +IN, route on Layer 1 with
+Layer 2 as the reference plane, and keep them clear of the I2S corridor
+(BCK/LRCK/DIN). U16 should sit between U3 and the output jacks in
 Zone C per `pcb-design.md` §5.
 
 ### Headroom check
@@ -206,23 +204,23 @@ clipping under all signal conditions.
 
 ## 6. Grounding
 
-Ground topology is defined globally in **`pcb-design.md`** -- L2 is a
-single continuous GND plane, never split or cut, and partitioning
+Ground topology is defined globally in **`pcb-design.md`** -- Layer 2
+is a single continuous GND plane, never split or cut, and partitioning
 between analog and digital return currents is handled by component
-placement on L1, not by copper topology.
+placement on Layer 1, not by copper topology.
 
 PCM5102A-specific notes on top of that:
 
 - Pins 3 (CPGND), 9 (AGND), and 19 (DGND) are all tied to the same
-  `GND` net. Each gets its own via dropping directly to L2 next to
+  `GND` net. Each gets its own via dropping directly to Layer 2 next to
   the pin -- do not daisy-chain them through surface copper.
 - Star-grounding is satisfied automatically by dropping each GND pin to
-  the L2 plane within < 1 mm; the plane itself *is* the star.
-- I2S signals (BCK/LRCK/DIN) route on L1 from Zone B to U3 with L2
-  directly underneath as the reference plane. Series-terminate at
-  the source (see `pcb-design.md` §5 "The I2S bridge").
-- OUTL / OUTR route on L1 within Zone C, referenced to L2, and stay
-  clear of the I2S corridor.
+  the Layer 2 plane within < 1 mm; the plane itself *is* the star.
+- I2S signals (BCK/LRCK/DIN) route on Layer 1 from Zone B to U3 with
+  Layer 2 directly underneath as the reference plane. Series-terminate
+  at the source (see `pcb-design.md` §5 "The I2S bridge").
+- OUTL / OUTR route on Layer 1 within Zone C, referenced to Layer 2,
+  and stay clear of the I2S corridor.
 - Place U3 at the Zone B-facing edge of Zone C so the I2S run is as
   short as possible (target ≤ 30 mm).
 

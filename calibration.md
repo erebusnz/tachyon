@@ -36,8 +36,8 @@ chain of static linear errors, each contributing to either the
 
 | Source | Typical spread | Contribution |
 |---|---|---|
-| REF5025 initial accuracy | ±0.05% (±1.25 mV at 2.5 V) | Slope |
-| REF5025 tempco | 3 ppm/°C max = ±30 ppm over 10 °C | Slope drift |
+| REF5025 initial accuracy | ±0.1% (±2.5 mV at 2.5 V) — I-grade | Slope |
+| REF5025 tempco | 8 ppm/°C max = ±80 ppm over 10 °C — I-grade | Slope drift |
 | DAC8552 INL | ±12 LSB max over 65536 codes = ±0.018% FS | Mostly slope, tiny curvature |
 | DAC8552 DNL | ±1 LSB (guaranteed monotonic) | Below calibration resolution |
 | R_f / R_g ratio (0.1% resistors) | √2 × 0.1% = ±0.14% | Slope |
