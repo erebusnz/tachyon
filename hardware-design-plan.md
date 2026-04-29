@@ -217,7 +217,7 @@ See `user-interface.md` for full wiring, decoupling, and firmware details.
 - 3.3V logic supply (VDD), ~15–30 mA typical; panel VCC from on-board boost converter
 - GDDRAM: 8192 bytes (two pixels per byte, upper/lower nibble). Full framebuffer transfer at 10 MHz: ~6.6 ms
 - 128×128 px fits 5–6 menu lines at 8px font or 3–4 lines at 16px, plus a status bar; grayscale enables smooth UI for waveforms, bar graphs, and highlighted selections
-- Module dimensions: ~44.5 mm × 37 mm PCB; visible area ~27mm × 27mm — suits a 12–14 HP panel
+- Module dimensions: ~44.5 mm × 37 mm PCB; visible area ~27mm × 27mm — suits a 10 HP panel
 - **Dedicated bus:** OLED runs on SPI1 (PA5 SCK / PA7 MOSI), separate from the DAC8552 on SPI2. This eliminates SPI mode switching and allows concurrent DMA transfers (SPI1 on DMA2, SPI2 on DMA1) — the 6.6 ms OLED framebuffer write never blocks timing-critical DAC updates
 - **Driver:** U8g2 `U8G2_SSD1327_WS_128X128` or Adafruit SSD1327 (SPI mode); not register-compatible with SSD1306 or SH1107
 

@@ -16,7 +16,7 @@ single rotary encoder and a 128×128 OLED.
 | **Input** | Alps Alpine EC11E18244AU rotary encoder with push switch |
 | **MIDI** | USB MIDI class device over the WeAct USB-C port |
 | **Power** | 10-pin Doepfer header, ±12 V only (local +5 V buck) |
-| **Format** | Eurorack, ~12–14 HP |
+| **Format** | Eurorack, 10 HP |
 
 
 ### High-level design
