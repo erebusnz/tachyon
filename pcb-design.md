@@ -209,7 +209,7 @@ cutting copper. Divide the board into three conceptual zones:
 │  P1, D1, D2, U12 + L3 (buck    │  WeAct STM32F405 module   │
 │    inductor)                   │  OLED connector           │
 │  C5 / C8                       │  74AHCT1G125 buffer       │
-│  R7 / R8, C7                   │  USB (if exposed)         │
+│  R1 / R2, C7                   │  USB (if exposed)         │
 │  F1 / F2, L1 / L2 ferrites     │  encoders / buttons       │
 │  input bulk caps C1 / C2       │                           │
 │  C3 / C4 HF bypass             │                           │

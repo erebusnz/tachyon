@@ -141,8 +141,8 @@ output calibration (`calibration.md`).
 | R24, R28 | 100 kΩ 1 % | 0805 | Vishay CRCW0805100KFKEA (LCSC TODO) | Doepfer A-100 standard CV input impedance; also the fault-current limiter into the op-amp |
 | R31, R32 | 33.0 kΩ 1 % | 0805 | Vishay CRCW080533K0FKEA (LCSC TODO) | Feedback; together with R_in sets the −0.330 attenuation |
 | R25, R27 | 1.0 kΩ 1 % | 0805 | Existing BOM 1 k line (or C17513) | Series resistor into ADC pin; part of anti-alias RC and isolates op-amp from C_ao capacitive load |
-| C41, C42 | 100 nF X7R | 0805 | Existing BOM 100 nF line | Anti-alias cap to GND; fc ≈ 1.6 kHz with R_ao — matched to CV modulation bandwidth |
-| D4, D5 | BAT54SLT1G | SOT-23 | ON Semi BAT54SLT1G / LCSC TODO | Dual Schottky (common anode); clamps ADC pin to GND and +3V3 rails |
+| C37, C39 | 100 nF X7R | 0805 | Existing BOM 100 nF line | Anti-alias cap to GND, placed at the WeAct ADC pin (backing) for charge-reservoir behaviour; fc ≈ 1.6 kHz with R_ao — matched to CV modulation bandwidth |
+| D4, D5 | BAT54SLT1G | SOT-23 | ON Semi BAT54SLT1G / LCSC TODO | Dual Schottky (common anode); clamps ADC pin to GND and +3V3 rails. Placed at the WeAct ADC pin (backing) alongside C37/C39. |
 
 Bias-generation network (**shared** between both channels — one
 divider drives both non-inverting pins):
@@ -151,7 +151,7 @@ divider drives both non-inverting pins):
 |---|---|---|---|---|
 | R30 | 10.0 kΩ 1 % | 0805 | existing 10 k line | Divider top, tied to REF5025 2.5 V; matched value with R29 for tempco tracking |
 | R29 | 10.0 kΩ 1 % | 0805 | existing 10 k line | Divider bottom, tied to GND |
-| C38 | 2.2 nF X7R | 0805 | Existing BOM 2.2 nF line | Noise filter at the divider tap; one cap for both channels |
+| C42 | 2.2 nF X7R | 0805 | Existing BOM 2.2 nF line | Noise filter at the divider tap; one cap for both channels |
 
 Both divider resistors are the same value (10.0 kΩ), so 1 % tolerance
 is sufficient — ratio error from matched-value parts is dominated by
@@ -161,7 +161,7 @@ calibrates out in firmware.
 **Op-amp:** one dual OPA1642AIDR package covers both channels. Call
 it **U23** in the schematic. Rails
 are the existing `+12V` and `−12V` nets from `power-supply.md`.
-Decoupling: 100 nF 0805 at V+ and 100 nF 0805 at V−, each as close
+Decoupling: **C40** 100 nF 0805 at V+ and **C41** 100 nF 0805 at V−, each as close
 to the package pins as possible; one 10 µF bulk cap per rail is
 already provided by the OPA1642 clusters at U7/U16 (no need to
 duplicate per op-amp — see `pcb-design.md`).
@@ -300,11 +300,11 @@ Items already in the BOM are noted; items to add are flagged.
 | 100 kΩ 1 % 0805 ×2 | R24, R28 | Vishay CRCW0805100KFKEA / LCSC TODO | **Add** |
 | 33.0 kΩ 1 % 0805 ×2 | R31, R32 | Vishay CRCW080533K0FKEA / LCSC TODO | **Add** |
 | 1.0 kΩ 1 % 0805 ×2 | R25, R27 | existing 1 k line | Reuse |
-| 100 nF X7R 0805 ×2 | C41, C42 | existing 100 nF line | Reuse |
+| 100 nF X7R 0805 ×2 | C37, C39 | existing 100 nF line | Reuse |
 | BAT54SLT1G dual Schottky ×2 | D4, D5 | ON Semi BAT54SLT1G / LCSC TODO | **Add (×2)** |
 | 10.0 kΩ 1 % 0805 ×2 | R29, R30 | existing 10 k line | Reuse |
-| 2.2 nF 0805 X7R | C38 | existing 2.2 nF line | Reuse |
-| 100 nF 0805 ×2 | C39, C40 | existing 100 nF line | Reuse |
+| 2.2 nF 0805 X7R | C42 | existing 2.2 nF line | Reuse |
+| 100 nF 0805 ×2 | C40, C41 | existing 100 nF line | Reuse |
 | PJ398SM switched 3.5 mm jack ×2 | J_CV1, J_CV2 | PJ398SM / LCSC TODO | **Add (×2)** |
 
 ---

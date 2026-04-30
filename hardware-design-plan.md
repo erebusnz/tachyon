@@ -70,7 +70,7 @@ The following pins are consumed by on-board hardware and must not be reassigned 
 | PB12 | `OLED-SPI-CS` | GPIO output | OLED chip select, active-low (see `user-interface.md` §1) |
 | PB13 | `DAC-SPI-SCLK` | SPI2_SCK (AF5) | DAC8552 clock (see `cv-output-dac.md`) |
 | PB15 | `DAC-SPI-MOSI` | SPI2_MOSI (AF5) | DAC8552 data (see `cv-output-dac.md`) |
-| PC0 | `USR-POT-1` | ADC1_IN10 | 10K pot wiper (see `user-interface.md` §3) |
+| PC0 | `USR-POT-1` | ADC1_IN10 | 100K pot wiper, U25 (see `user-interface.md` §3) |
 | PC6 | `~MUTE` | GPIO output | PCM5102A ~XSMT (see `audio-output-dac.md`) |
 | PC8 | `SDIO_D0` | SDIO_D0 (AF12) | MicroSD data 0 (WeAct board) |
 | PC9 | `SDIO_D1` | SDIO_D1 (AF12) | MicroSD data 1 (WeAct board) |
@@ -184,7 +184,7 @@ Items already provided by the WeAct core board are marked accordingly.
 | PCM5102APWR | Audio I2S output (see `audio-output-dac.md`) | I2S3 | **Yes** |
 | SSD1327 OLED 1.5″ 128×128 4-bit grayscale | Menu / status display | SPI1 (dedicated) | **Yes** |
 | Alps Alpine EC11E18244AU | Menu navigation, parameter adjust, confirm (rotary encoder w/ push) | TIM4 encoder mode (PB6/PB7) + GPIO EXTI (PB4 switch) | **Yes** |
-| Alps Alpine 10K linear pot (RK09K or equiv.) | General-purpose parameter knob, firmware-assignable | ADC1_IN10 (PC0) | **Yes** |
+| Alps Alpine 100K linear pot (RK09K or equiv.) | General-purpose parameter knob, firmware-assignable | ADC1_IN10 (PC0) | **Yes** |
 
 ---
 
@@ -200,9 +200,9 @@ Items already provided by the WeAct core board are marked accordingly.
 
 **Debouncing:** The EC11E encoder contacts bounce (~5 ms typical). Handle the push switch in firmware (5–10 ms software debounce). TIM4 encoder mode's input filter (ICFilter) provides hardware-level bounce rejection on A/B; the external 10 nF caps to GND on A, B, and the switch pin add RF immunity in a Eurorack environment.
 
-**Alps Alpine 10K linear potentiometer (RK09K1130A5R or equivalent 9 mm vertical PCB-mount)**
+**Alps Alpine 100K linear potentiometer (RK09K1130C0L or equivalent 9 mm vertical PCB-mount), designator U25**
 - Wiper → PC0 (ADC1_IN10), CW terminal → +3V3, CCW terminal → GND
-- 100 nF cap on wiper to GND for noise filtering
+- C46 100 nF on wiper to GND as ADC charge reservoir + noise filter
 - Firmware-assignable: the ADC reading maps to whichever parameter is currently selected or assigned via the menu
 - Added to the ADC1 scan group after PA0/PA1 (CV inputs); 8–16× moving average in firmware for stable readings
 

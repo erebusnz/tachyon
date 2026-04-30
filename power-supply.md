@@ -111,12 +111,12 @@ resistors. WEBENCH uses Vref = 0.600 V (nominal; the datasheet lists
 0.596 V typ, min 0.584, max 0.608). Vout in sim calculates to
 **0.600 V × (1 + 97.6 k / 13.3 k) = 5.003 V**.
 
-Note: with R7 = 100 k the nearest E96 pair is 100 k / 13.7 k (4.96 V
+Note: with R1 = 100 k the nearest E96 pair is 100 k / 13.7 k (4.96 V
 in sim) or 100 k / 13.3 k (5.11 V); neither hits 5.00 V. Moving to
-R7 = 97.6 k / R8 = 13.3 k lands within 3 mV of target -- the best
+R1 = 97.6 k / R2 = 13.3 k lands within 3 mV of target -- the best
 E96 pair available. Real-world Vout will shift by the Vref tolerance
 (±2 %), which dominates over divider error regardless of the pair
-chosen. The feed-forward zero shifts by ~2 % (R7 moves from 100 k to
+chosen. The feed-forward zero shifts by ~2 % (R1 moves from 100 k to
 97.6 k), which is negligible for loop response -- C7 stays at 68 pF.
 
 **Validated in TI WEBENCH sim:** Vout avg 5.03 V (previous 90.9 k /
@@ -126,14 +126,18 @@ inrush transient** (19 % margin vs the DFE252012F-4R7M 2.1 A Isat).
 Steady-state DCM peak is much lower -- see the L3 note below for
 the ripple calculation.
 
+The feedback divider designators are **R1 / R2** (was R7 / R8 in earlier
+revs). R7 / R8 are now claimed by the PCM5102A audio EMI series
+resistors -- see `audio-output-dac.md` §4a.
+
 | Ref | Value | Package | MPN (WEBENCH) | Notes |
 |---|---|---|---|---|
 | C5 | 10 uF / 25 V ±10 % | 0805 X5R | Murata GRM21BR61E106KA73L (LCSC **C84416**) | Input cap per WEBENCH. Place ≤ 2 mm from VIN/GND |
 | C6 | 100 nF / 25 V | 0805 | AVX 08053C104KAT2A | BOOT-SW cap; reuse BOM line 1 (0805 100 nF) |
 | L3 | 4.7 uH ±20 % / Isat 2.1 A / Irms 1.5 A | 2520 metric (2.5×2.0 mm) shielded | Murata `DFE252012F-4R7M=P2` (LCSC **C668313**) | DCR 190 mΩ max (160 mΩ typ); metal-alloy shielded. Isat at ΔL/L = 30 %; Irms at ΔT = 40 °C |
-| R7 | 97.6 k 1 % | 0805 | Vishay CRCW080597K6FKEA | Feedback divider top; sets Vout = 5.00 V with R8 |
-| R8 | 13.3 k 1 % | 0805 | Vishay CRCW080513K3FKEA | Feedback divider bottom |
-| C7 | 68 pF / 50 V ±1 % | 0805 NP0 | YAGEO CC0805FRNPO9BN680 (LCSC **C541517**) | Feed-forward across R7, improves loop response |
+| R1 | 97.6 k 1 % | 0805 | Vishay CRCW080597K6FKEA | Feedback divider top; sets Vout = 5.00 V with R2 |
+| R2 | 13.3 k 1 % | 0805 | Vishay CRCW080513K3FKEA | Feedback divider bottom |
+| C7 | 68 pF / 50 V ±1 % | 0805 NP0 | YAGEO CC0805FRNPO9BN680 (LCSC **C541517**) | Feed-forward across R1, improves loop response |
 | C8 | 47 uF / 16 V | 1210 X5R | Murata GRM32ER61C476KE15L | Output bulk; ESR ~3 mΩ |
 
 **Substitutions and assembly notes:**
@@ -141,7 +145,7 @@ the ripple calculation.
 - **C7 (feed-forward cap):** WEBENCH proposed an 0201 part. **Bumped to
   0805** for hand assembly / rework. Any C0G/NP0 68 pF 0805 25 V works --
   the exact MPN doesn't matter as long as the dielectric is C0G.
-- **R7 / R8:** WEBENCH used 0402. Bumped to **0805** to match the
+- **R1 / R2:** WEBENCH used 0402. Bumped to **0805** to match the
   rest of the board and to keep hand-soldering manageable. Keep the
   **exact resistance values** (97.6 k and 13.3 k, 1 %) -- do not round
   to standard E12 values; the divider math depends on these, and any
@@ -361,8 +365,8 @@ Items already in the existing BOM are noted; items to add are flagged.
 | 100 nF 0805 | C6, LDO in/out HF caps (if used) | C1711 (existing line 1) | Reuse |
 | 1 uF 0805 X7R | C9, C11, C12, C14 | YAGEO CC0805KKX7R9BB105 / **C91185** | **Add** |
 | 10 nF 0805 X7R | C10, C13 | Existing BOM 10 nF line | Reuse |
-| 97.6 k 1 % 0805 | R7 | Vishay CRCW080597K6FKEA / **C2077571** | **Add** |
-| 13.3 k 1 % 0805 | R8 | Vishay CRCW080513K3FKEA / **C4359485** (or **C4309412**) | **Add** |
+| 97.6 k 1 % 0805 | R1 | Vishay CRCW080597K6FKEA / **C2077571** | **Add** |
+| 13.3 k 1 % 0805 | R2 | Vishay CRCW080513K3FKEA / **C4359485** (or **C4309412**) | **Add** |
 | 68 pF NP0 50 V ±1 % 0805 | C7 | YAGEO CC0805FRNPO9BN680 / **C541517** | **Add** |
 | Ferrite bead 600 Ω @ 100 MHz ×2 | L1, L2 | Murata BLM21AG601SN1D -- LCSC TODO | **Add (×2)** |
 | PTC resettable fuse 500 mA 30 V 0805 | F1 | TECHFUSE SMD0805-050-30V / **C42924282** | **Add** |

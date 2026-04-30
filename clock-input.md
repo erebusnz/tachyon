@@ -47,7 +47,7 @@ digital clock signals.
                         R17 1 kΩ
 JACK_TIP (U19) ──/\/\/\──┬──────────────────────► PA2 (TIM2_CH3)
                           │
-                          ├── C37 2.2 nF ── GND
+                          ├── C38 2.2 nF ── GND
                           │
                           └── D3 BAT54SLT1G ── GND / +3V3
 ```
@@ -57,7 +57,7 @@ JACK_TIP (U19) ──/\/\/\──┬──────────────�
 1. **Jack tip** receives the external clock signal (0/+5 V typical)
 2. **R17 (1 kΩ)** limits fault current into the clamp diodes and
    GPIO under over-voltage conditions
-3. **C37 (2.2 nF)** with R17 forms a low-pass filter at
+3. **C38 (2.2 nF)** with R17 forms a low-pass filter at
    fc ≈ 72 kHz — passes clock edges cleanly (fastest edge rate at
    240 BPM / 24 PPQN is 96 Hz) while rejecting RF and switcher noise
 4. **D3 (BAT54SLT1G)** clamps the filtered node to the 0–3.3 V
@@ -214,11 +214,11 @@ input capture and firmware locks to the external source.
 | Ref | Value | Package | MPN / LCSC | Notes |
 |---|---|---|---|---|
 | R17 | 1.0 kΩ 1 % | 0805 | Existing BOM 1 k line | Series current limiter; part of RC filter |
-| C37 | 2.2 nF C0G/NP0 | 0805 | LCSC TODO | Filter cap; C0G for stable capacitance. fc ≈ 72 kHz with R17 |
+| C38 | 2.2 nF C0G/NP0 | 0805 | LCSC TODO | Filter cap; C0G for stable capacitance. fc ≈ 72 kHz with R17 |
 | D3 | BAT54SLT1G | SOT-23 | BAT54SLT1G / LCSC TODO | Dual Schottky (common anode); clamps to +3V3 and GND |
 | U19 | PJ398SM switched 3.5 mm jack | — | PJ398SM / LCSC TODO | Same jack type as J_CV1/J_CV2 |
 
-All passives except C37 are already in the BOM.
+All passives except C38 are already in the BOM.
 
 ---
 

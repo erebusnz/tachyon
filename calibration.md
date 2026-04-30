@@ -13,7 +13,7 @@ Scope: this document covers only the precision CV path:
 
 ```
 DAC8552 (VREF = REF5025 2.500 V)  →  OPA1642 non-inverting ×4
-                                   →  R_PROT 1 kΩ  →  CV-OUT-A / CV-OUT-B jack
+                                   →  R13/R14 1 kΩ  →  CV-OUT-A / CV-OUT-B jack
 ```
 
 The audio DAC path (PCM5102A) is not calibrated — see `audio-output-dac.md`.
@@ -42,7 +42,7 @@ chain of static linear errors, each contributing to either the
 | DAC8552 DNL | ±1 LSB (guaranteed monotonic) | Below calibration resolution |
 | R_f / R_g ratio (0.1% resistors) | √2 × 0.1% = ±0.14% | Slope |
 | Feedback-resistor tempco mismatch | ~25 ppm/°C × 10 °C = ±250 ppm | Slope drift |
-| R_PROT / Eurorack Z_in divider (1 kΩ / 100 kΩ) | −0.99%, load-dependent | Slope |
+| R13/R14 / Eurorack Z_in divider (1 kΩ / 100 kΩ) | −0.99%, load-dependent | Slope |
 | OPA1642 Vos × Gain | ±3.5 mV × 4 = ±14 mV max | Offset |
 | OPA1642 Vos drift | 1.5 µV/°C × 4 × 10 °C = ±60 µV | Offset drift |
 
@@ -115,7 +115,7 @@ Path A calibrates the sequencer **as a voltage source** and is
 independent of any downstream module — the resulting slope/offset are
 universal. Path B calibrates the sequencer **as-patched into one
 specific VCO** — the slope absorbs that VCO's particular input
-impedance into the R_PROT divider, giving slightly better accuracy
+impedance into the R13/R14 divider, giving slightly better accuracy
 when used with that VCO but slightly worse accuracy with others.
 
 Recommended: use Path A for the permanent flash-stored calibration,
@@ -135,7 +135,7 @@ into most often.
    on the sleeve (board GND).
 3. **Leave the jack unloaded** — do not patch CV-OUT-A into any
    downstream module during this measurement. An unloaded output
-   eliminates the R_PROT divider so the calibration captures only the
+   eliminates the R13/R14 divider so the calibration captures only the
    DAC + op-amp + REF5025 errors. (Why: see §6 below.)
 4. Enter calibration mode via the OLED menu: **Menu → Calibration →
    CV Out A**. Firmware disables any sequence playback and holds the
@@ -192,7 +192,7 @@ offset = 0.9972 − 152.363e−6 × 6554
 ```
 
 Compare against the ideal: 152.588 µV/LSB and 0 V offset. The
-measured slope is 0.15% low (consistent with the R_PROT divider not
+measured slope is 0.15% low (consistent with the R13/R14 divider not
 being active because the jack is unloaded, and the feedback-resistor
 ratio being slightly under 4) and the offset is within spec.
 
@@ -207,7 +207,7 @@ for user confirmation.
 Same procedure with the DMM moved to the CV-OUT-B jack and the menu
 advanced to **Menu → Calibration → CV Out B**. The two channels have
 independent `slope` and `offset` values because the feedback
-resistors R1/R3 and ground-leg R2/R4 have independent tolerances.
+resistors R3/R5 and ground-leg R4/R6 have independent tolerances.
 
 ---
 
@@ -241,7 +241,7 @@ This is why Path A (DMM) is the canonical procedure.
 
 ## 6. Why the jack is unloaded during Path A calibration
 
-R_PROT (1 kΩ) forms a voltage divider with the downstream module's
+R13 / R14 (1 kΩ each) form a voltage divider with the downstream module's
 input impedance. A typical Eurorack 1 V/oct input is 100 kΩ, giving a
 −0.99% attenuation at the jack. Different VCOs have different input
 impedances (30 kΩ to 1 MΩ is the range in the wild), so calibrating
@@ -285,8 +285,8 @@ If linearity is out of spec, the likely causes in order of probability:
 1. DAC8552 has a bad INL segment (swap chips to confirm).
 2. Op-amp is clipping on the high point (lower the high-point code
    from 65535 to 58982 and re-verify the top of range separately).
-3. Feedback resistors have drifted or the PCB has a cold joint at R1
-   or R3 — reflow U7's feedback network.
+3. Feedback resistors have drifted or the PCB has a cold joint at R3
+   or R5 — reflow U7's feedback network.
 4. REF5025 is noisy or oscillating (add/check the NR cap on pin 5 and
    verify the 10 µF bulk on `+3V3_PREC`).
 
@@ -338,7 +338,7 @@ conditions. Re-run only if:
   lights, recalibrate. Realistically this is ~5 cents of drift and
   most users won't notice.
 - **A passive part in the precision chain has been replaced**
-  (REF5025, DAC8552, OPA1642, R1–R4). This retunes the slope.
+  (REF5025, DAC8552, OPA1642, R3–R6). This retunes the slope.
 - **The module has sat unpowered for > 1 year** — op-amp Vos can age
   slightly. Verify first, re-cal only if out of spec.
 

@@ -108,8 +108,8 @@ U7.1 (OPA1642 unit A) — drives **CV-OUT-A** jack, fed from DAC8552 **VOUTB**:
 
 | Pin | Name | Connection |
 |---|---|---|
-| 1 | OUT A | CV_A net → R_PROT_A 1 kΩ → CV jack A tip; also → R1 (30 kΩ) feedback tap |
-| 2 | -IN A | Junction of R1 (30 kΩ to OUT A) and R2 (10 kΩ to GND) |
+| 1 | OUT A | CV_A net → R13 1 kΩ → CV jack A tip; also → R3 (30 kΩ) feedback tap |
+| 2 | -IN A | Junction of R3 (30 kΩ to OUT A) and R4 (10 kΩ to GND) |
 | 3 | +IN A | U6 pin 3 (VOUTB) — DAC channel B raw output |
 | 4 | V- | `-12V` (Eurorack) via C23 (100 nF) |
 
@@ -118,8 +118,8 @@ U7.2 (OPA1642 unit B) — drives **CV-OUT-B** jack, fed from DAC8552 **VOUTA**:
 | Pin | Name | Connection |
 |---|---|---|
 | 5 | +IN B | U6 pin 4 (VOUTA) — DAC channel A raw output |
-| 6 | -IN B | Junction of R3 (30 kΩ to OUT B) and R4 (10 kΩ to GND) |
-| 7 | OUT B | CV_B net → R_PROT_B 1 kΩ → CV jack B tip; also → R3 (30 kΩ) feedback tap |
+| 6 | -IN B | Junction of R5 (30 kΩ to OUT B) and R6 (10 kΩ to GND) |
+| 7 | OUT B | CV_B net → R14 1 kΩ → CV jack B tip; also → R5 (30 kΩ) feedback tap |
 | 8 | V+ | `+12V` (Eurorack) via C22 (100 nF) |
 
 All "GND" connections above land on the single continuous Layer 2
@@ -178,29 +178,29 @@ Feedback network (×4 non-inverting gain, per `hardware-design-plan.md` §"Op-Am
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| R1 | 30 kΩ 0.1% | 0805 thin film | OUT A (pin 1) ↔ −IN A (pin 2) | Feedback resistor A; tap *at OUT A pin, before R_PROT_A* |
-| R2 | 10 kΩ 0.1% | 0805 thin film | −IN A (pin 2) – GND | Ground leg A |
-| R3 | 30 kΩ 0.1% | 0805 thin film | OUT B (pin 7) ↔ −IN B (pin 6) | Feedback resistor B; tap *at OUT B pin, before R_PROT_B* |
-| R4 | 10 kΩ 0.1% | 0805 thin film | −IN B (pin 6) – GND | Ground leg B |
+| R3 | 30 kΩ 0.1% | 0805 thin film | OUT A (pin 1) ↔ −IN A (pin 2) | Feedback resistor A; tap *at OUT A pin, before R13* |
+| R4 | 10 kΩ 0.1% | 0805 thin film | −IN A (pin 2) – GND | Ground leg A |
+| R5 | 30 kΩ 0.1% | 0805 thin film | OUT B (pin 7) ↔ −IN B (pin 6) | Feedback resistor B; tap *at OUT B pin, before R14* |
+| R6 | 10 kΩ 0.1% | 0805 thin film | −IN B (pin 6) – GND | Ground leg B |
 
 Exact gain: 1 + 30 k / 10 k = ×4.0000 → 2.5000 V × 4 = 10.000 V full-scale.
-Use 0.1 % thin-film parts on R1–R4 so the untrimmed channel-to-channel gain
+Use 0.1 % thin-film parts on R3–R6 so the untrimmed channel-to-channel gain
 mismatch stays under 0.2 % before firmware calibration.
 
 Output protection (per `hardware-design-plan.md` §"Op-Amp Output Stage"):
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| R_PROT_A | 1 kΩ 1% | 0805 thick film | OUT A (pin 1) → CV jack A tip | **Outside feedback loop** — R1 taps at the op-amp pin, then R_PROT_A is in series to the jack. Limits short-circuit current to 10 mA at 10 V, provides stability into cable capacitance, defines output Zout. |
-| R_PROT_B | 1 kΩ 1% | 0805 thick film | OUT B (pin 7) → CV jack B tip | Same as R_PROT_A for channel B. |
+| R13 | 1 kΩ 1% | 0805 thick film | OUT A (pin 1) → CV jack A tip | **Outside feedback loop** — R3 taps at the op-amp pin, then R13 is in series to the jack. Limits short-circuit current to 10 mA at 10 V, provides stability into cable capacitance, defines output Zout. Lives on the IO board. |
+| R14 | 1 kΩ 1% | 0805 thick film | OUT B (pin 7) → CV jack B tip | Same as R13 for channel B. Lives on the IO board. |
 
-BOM part for R_PROT: **YAGEO AC0805FR-7W1KL** (1 kΩ, 0805, 1 %, 250 mW,
+BOM part for R13 / R14: **YAGEO AC0805FR-7W1KL** (1 kΩ, 0805, 1 %, 250 mW,
 150 V, ±100 ppm/°C, LCSC **C727989**). 250 mW is 2.5× the 100 mW
 worst-case short-circuit dissipation — sustained jack shorts at full scale
 are handled indefinitely.
 
 The board already stocks 100 nF 0805 and 10 µF 0805 from the audio-DAC
-BOM line; reuse those values. The 0.1 % feedback resistors (R1–R4) must be
+BOM line; reuse those values. The 0.1 % feedback resistors (R3–R6) must be
 added to the BOM if not already present.
 
 ---
@@ -210,31 +210,31 @@ added to the BOM if not already present.
 The OPA1642 output stage drives the front-panel CV jacks through the
 protection resistors:
 
-- OUT A (U7 pin 1) → **R_PROT_A** 1 kΩ → CV jack A (tip)
-- OUT B (U7 pin 7) → **R_PROT_B** 1 kΩ → CV jack B (tip)
+- OUT A (U7 pin 1) → **R13** 1 kΩ → CV jack A (tip)
+- OUT B (U7 pin 7) → **R14** 1 kΩ → CV jack B (tip)
 - CV jack sleeves → GND (Layer 2 plane)
 - Full-scale output: 0 V to +10 V unipolar (10 octaves at 1 V/oct)
 
-**Feedback tap placement is critical:** R1 (and R3) must tap at the
-op-amp output pin itself, *before* R_PROT_A (R_PROT_B). Putting R_PROT
-outside the feedback loop decouples short-circuit survival from
+**Feedback tap placement is critical:** R3 (and R5) must tap at the
+op-amp output pin itself, *before* R13 (R14). Putting the protection
+resistor outside the feedback loop decouples short-circuit survival from
 output-voltage accuracy — a jack short can no longer drive the op-amp into
 runaway correction. If the feedback is instead taken from the jack side of
-R_PROT, a short pulls the feedback node down and the op-amp rails trying
+R13 / R14, a short pulls the feedback node down and the op-amp rails trying
 to compensate.
 
 **No DC blocking capacitors** on the output — this is a DC-coupled CV
 path, not audio. Eurorack 1 V/oct depends on the absolute DC level.
 
-The ~1 % divider error between R_PROT (1 kΩ) and a typical Eurorack
+The ~1 % divider error between R13 / R14 (1 kΩ) and a typical Eurorack
 1 V/oct input impedance (100 kΩ) is absorbed into firmware two-point slope
 calibration at bring-up, alongside REF5025 tolerance, feedback-resistor
 tolerance, and OPA1642 Vos. No static gain error remains after
 calibration.
 
-Place U7 adjacent to U6 and keep the OUT→R_PROT→jack runs short and on
-Layer 1 with Layer 2 as the reference plane. CV jacks belong in the
-front-panel I/O zone per `pcb-design.md` §5.
+Place U7 adjacent to U6 and keep the OUT→R13/R14→jack runs short and on
+Layer 1 with Layer 2 as the reference plane. R13 and R14 sit on the IO
+board; CV jacks belong in the front-panel I/O zone per `pcb-design.md` §5.
 
 ---
 
@@ -251,7 +251,7 @@ CV-path-specific notes on top of that:
   within < 1 mm of the pin. Do not daisy-chain.
 - **U2 REF5025 pin 4 (GND)** gets its own via to Layer 2 placed within
   < 1 mm of the pin. Pins 1, 7, and 8 (DNC/NC) are left floating.
-- **U7 OPA1642** has no dedicated GND pin; ground return for R2 and R4
+- **U7 OPA1642** has no dedicated GND pin; ground return for R4 and R6
   (the 10 kΩ feedback ground legs) must land on Layer 2 via a short
   trace close to the op-amp. Route these two ground-leg vias adjacent
   to the op-amp body, not back at the DAC or reference, so the feedback
@@ -263,7 +263,7 @@ CV-path-specific notes on top of that:
   C20 / C21 (at U6) act as a distributed bypass along the trace.
 - **+3V3_PREC routing:** feed U6 from the same LDO output node that feeds
   U2's decoupling area; do not star from the LDO with long separate runs.
-- **Feedback node shielding:** R1/R3 (−IN nodes) are high-impedance
+- **Feedback node shielding:** R3/R5 (−IN nodes) are high-impedance
   summing junctions. Keep them short, away from the SPI corridor
   (PB13/PB15), and under U7's body if possible.
 

@@ -65,8 +65,8 @@ PC10, PC12, PA15, and PC6 as consumed by the audio DAC.
 | 3 | CPGND | GND (Layer 2 plane) |
 | 4 | CAPM | Flying cap to pin 2 (CAPP) -- C27 (470 nF) |
 | 5 | VNEG | Decouple to GND -- C28 (1 µF) |
-| 6 | OUTL | R14 470 R + C32 2.2 nF EMI filter -> U16A +IN (pin 3); buffer drives U17 |
-| 7 | OUTR | R13 470 R + C33 2.2 nF EMI filter -> U16B +IN (pin 5); buffer drives U18 |
+| 6 | OUTL | R7 470 R + C32 2.2 nF EMI filter -> U16A +IN (pin 3); buffer drives U18 |
+| 7 | OUTR | R8 470 R + C33 2.2 nF EMI filter -> U16B +IN (pin 5); buffer drives U17 |
 | 8 | AVDD | `+3V3_AUDIO` via C30 (100 nF) + C31 (10 µF) decoupling |
 | 9 | AGND | GND (Layer 2 plane) |
 | 10 | DEMP | GND (de-emphasis disabled) |
@@ -119,10 +119,10 @@ where practical, with short fat traces to GND.
 | C29 | 1 uF | 0805 X7R | LDOO (pin 18) -- GND | Required, do not omit |
 | C28 | 1 uF | 0805 X7R | VNEG (pin 5) -- GND | Charge-pump output |
 | C27 | 470 nF | 0805 X7R | CAPP (pin 2) <-> CAPM (pin 4) | 220 nF-1 uF range; 470 nF nominal |
-| R14 | 470 R | 0805 1% | OUTL (pin 6) -> node L | Series element of DAC-side EMI LPF |
-| R13 | 470 R | 0805 1% | OUTR (pin 7) -> node R | Series element of DAC-side EMI LPF |
-| C32 | 2.2 nF | 0805 NP0/C0G | node L -- GND | Shunt element; ~154 kHz LPF with R14 |
-| C33 | 2.2 nF | 0805 NP0/C0G | node R -- GND | Shunt element; ~154 kHz LPF with R13 |
+| R7 | 470 R | 0805 1% | OUTL (pin 6) -> node L | Series element of DAC-side EMI LPF |
+| R8 | 470 R | 0805 1% | OUTR (pin 7) -> node R | Series element of DAC-side EMI LPF |
+| C32 | 2.2 nF | 0805 NP0/C0G | node L -- GND | Shunt element; ~154 kHz LPF with R7 |
+| C33 | 2.2 nF | 0805 NP0/C0G | node R -- GND | Shunt element; ~154 kHz LPF with R8 |
 
 The board already stocks 100 nF 0805 (BOM line 1) and 10 uF 0805 (BOM line
 2); reuse those values to avoid adding line items. The 1 uF and 470 nF
@@ -141,14 +141,23 @@ buffer with gain ×1.68 to lift the output to exactly 10 Vpp full-scale.
 ### Signal chain (per channel)
 
 ```
-DAC OUTx ──> R14/R13 470 R ──┬──> C32/C33 2.2 nF ──> GND   (DAC-side EMI LPF, fc ~154 kHz)
-                             │
-                             └──> U16x +IN
-                                   │
-                                   └──> U16x OUT ──> R_SERx 1 k ──> Ux jack tip
-                                          │                (R_SERx on I/O board)
-                        U16x -IN <─ R11/R12 6.8 k <┤
-                        U16x -IN ─> R9/R10 10 k ─> GND
+DAC OUTL ──> R7  470 R ──┬──> C32 2.2 nF ──> GND   (DAC-side EMI LPF, fc ~154 kHz)
+                         │
+                         └──> U16.1 +IN
+                               │
+                               └──> U16.1 OUT ──> R16 1 k ──> U18 (A-OUT-L) tip
+                                      │                  (R16 on I/O board)
+                    U16.1 -IN <─ R10 6.8 k <┤
+                    U16.1 -IN ─> R9  10 k ─> GND
+
+DAC OUTR ──> R8  470 R ──┬──> C33 2.2 nF ──> GND
+                         │
+                         └──> U16.2 +IN
+                               │
+                               └──> U16.2 OUT ──> R15 1 k ──> U17 (A-OUT-R) tip
+                                      │                  (R15 on I/O board)
+                    U16.2 -IN <─ R12 6.8 k <┤
+                    U16.2 -IN ─> R11 10 k ─> GND
 ```
 
 Gain = 1 + R_FB / R_GN = 1 + 6.8 / 10 = **1.68×**.
@@ -158,26 +167,26 @@ Output full-scale: 2.1 VRMS × 1.68 = 3.53 VRMS = 9.99 Vpp ≈ ±5 V peak.
 
 | OPA1642 pin | Net | Notes |
 |---|---|---|
-| 1 OUT_A | `AUDIO_BUF_L` -> R_SERL -> U17 tip | Left channel output (R_SERL lives on the I/O board schematic) |
-| 2 -IN_A | Junction of R11 and R9 | Inverting input feedback node |
+| 1 OUT_A | `AUDIO_BUF_L` -> R16 -> U18 (A-OUT-L) tip | Left channel output (R16 lives on the I/O board schematic) |
+| 2 -IN_A | Junction of R10 and R9 | Inverting input feedback node |
 | 3 +IN_A | node L (post DAC EMI filter) | Non-inverting input |
 | 4 V- | `-12V` | Decouple per §4a |
 | 5 +IN_B | node R (post DAC EMI filter) | Non-inverting input |
-| 6 -IN_B | Junction of R12 and R10 | Inverting input feedback node |
-| 7 OUT_B | `AUDIO_BUF_R` -> R_SERR -> U18 tip | Right channel output (R_SERR lives on the I/O board schematic) |
+| 6 -IN_B | Junction of R12 and R11 | Inverting input feedback node |
+| 7 OUT_B | `AUDIO_BUF_R` -> R15 -> U17 (A-OUT-R) tip | Right channel output (R15 lives on the I/O board schematic) |
 | 8 V+ | `+12V` | Decouple per §4a |
 
 ### U16 buffer passives BOM
 
 | Ref | Value | Package | Net | Notes |
 |---|---|---|---|---|
-| R11 | 6.8 k 1% | 0805 | U16A OUT -- U16A -IN | Feedback top (left) |
-| R9 | 10 k 1% | 0805 | U16A -IN -- GND | Feedback bottom, left (gain set) |
-| R12 | 6.8 k 1% | 0805 | U16B OUT -- U16B -IN | Feedback top (right) |
-| R10 | 10 k 1% | 0805 | U16B -IN -- GND | Feedback bottom, right (gain set) |
-| R_SERL | 1 k 1% | 0805 | U16A OUT -- U17 tip | Eurorack 1 k output impedance convention. Placed on the I/O board schematic. |
-| R_SERR | 1 k 1% | 0805 | U16B OUT -- U18 tip | Eurorack 1 k output impedance convention. Placed on the I/O board schematic. |
-| C34 | 100 nF | 0805 X7R | +12V -- GND at U16 pin 8 | HF bypass, closest to pin. Bulk handled by C1 at input filter. |
+| R10 | 6.8 k 1% | 0805 | U16.1 OUT -- U16.1 -IN | Feedback top (left) |
+| R9 | 10 k 1% | 0805 | U16.1 -IN -- GND | Feedback bottom, left (gain set) |
+| R12 | 6.8 k 1% | 0805 | U16.2 OUT -- U16.2 -IN | Feedback top (right) |
+| R11 | 10 k 1% | 0805 | U16.2 -IN -- GND | Feedback bottom, right (gain set) |
+| R16 | 1 k 1% | 0805 | U16.1 OUT -- U18 (A-OUT-L) tip | Eurorack 1 k output impedance convention. Placed on the I/O board schematic. |
+| R15 | 1 k 1% | 0805 | U16.2 OUT -- U17 (A-OUT-R) tip | Eurorack 1 k output impedance convention. Placed on the I/O board schematic. |
+| C36 | 100 nF | 0805 X7R | +12V -- GND at U16 pin 8 | HF bypass, closest to pin. Bulk handled by C1 at input filter. |
 | C35 | 100 nF | 0805 X7R | -12V -- GND at U16 pin 4 | HF bypass, closest to pin. Bulk handled by C2 at input filter. |
 
 Reuse the existing 100 nF and 10 uF 0805 BOM lines. The 6.8 k, 10 k, and

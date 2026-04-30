@@ -6,7 +6,7 @@ on the Tachyon board:
 - **SSD1327 OLED** — 1.5" 128x128 4-bit grayscale SPI display for menu and status
 - **Alps Alpine EC11E18244AU** — incremental rotary encoder with
   push switch for menu navigation and parameter editing
-- **Alps 10K potentiometer** — general-purpose analog input read
+- **Alps 100K potentiometer** — general-purpose analog input read
   by the STM32 ADC, firmware-assignable to any parameter
 
 Source references:
@@ -91,10 +91,11 @@ Both are acceptable at a 10-30 Hz UI refresh rate.
 
 ### 1.5 Decoupling
 
-Place 100 nF X7R 0805 between VCC and GND as close to the OLED
-module connector as possible. If the module has on-board decoupling
-(most breakouts do), this is additional insurance against SPI
-switching noise.
+The Waveshare 1.5" SSD1327 module has on-board VCC decoupling, so no
+additional external bypass cap is fitted on the Tachyon PCB. If a future
+board revision uses a bare SSD1327 panel without an integrated breakout,
+add a 100 nF X7R 0805 between VCC and GND as close to the connector as
+possible.
 
 ### 1.6 Firmware notes
 
@@ -156,23 +157,26 @@ free) if needed later.
 ### 2.3 Wiring
 
 ```
-                  EC11E18244AU
+                  EC11E18244AU (USR-ENC)
                 ┌──────────────┐
   PB6 ──┬───────┤ A            │
         │       │              │
-       10nF     │   Common ────┤── GND
+       C44      │   Common ────┤── GND
+       10nF     │              │
         │       │              │
        GND      │              │
                 │              │
   PB7 ──┬───────┤ B            │
         │       │              │
+       C45      │              │
        10nF     │              │
         │       │              │
        GND      │              │
                 │              │
-  PB4 ──┬───────┤ SW (NO)      │
+  PB4 ──┬───────┤ SW (NO, SW1) │
         │       │              │
-       10nF     │   SW Common ─┤── GND
+       C43      │   SW Common ─┤── GND
+       10nF     │              │
         │       │              │
        GND      └──────────────┘
 ```
@@ -222,14 +226,15 @@ Firmware distinguishes short press (<500 ms) from long press
 
 ---
 
-## 3. Potentiometer — Alps 10K Linear
+## 3. Potentiometer — Alps 100K Linear
 
 ### 3.1 Configuration summary
 
 | Decision | Value | Rationale |
 |---|---|---|
-| Type | 10 kOhm linear taper (B10K) | Linear taper for predictable firmware mapping; 10K is standard for 3.3 V ADC reads |
-| Part | Alps Alpine RK09K1130A5R (or equivalent 9 mm vertical PCB-mount) | 9 mm body fits Eurorack panel spacing; vertical mount for front-panel shaft |
+| Type | 100 kOhm linear taper (B100K) | Linear taper for predictable firmware mapping. 100K (vs 10K) reduces idle current draw across the divider by 10×; the wiper bypass cap C46 (§3.3) makes the higher source impedance invisible to the ADC. |
+| Part | Alps Alpine RK09K1130C0L (or equivalent 9 mm vertical 100 kΩ linear PCB-mount) | 9 mm body fits Eurorack panel spacing; vertical mount for front-panel shaft |
+| Designator | U25 | |
 | Purpose | General-purpose analog parameter knob | Firmware maps the ADC reading to whichever parameter is currently selected or assigned |
 | ADC pin | PC0 | ADC1_IN10 — from the reserve ADC pool (PC0-PC3, PB0) |
 | Wiring | Wiper to ADC, CW to +3V3, CCW to GND | Full rotation maps 0-3.3 V across the 12-bit ADC range |
@@ -243,22 +248,23 @@ Firmware distinguishes short press (<500 ms) from long press
 ### 3.3 Wiring
 
 ```
-            Alps 10K linear pot
+            Alps 100K linear pot (U25)
            ┌───────────────────┐
   +3V3 ────┤ CW (pin 3)       │
            │                   │
            │    Wiper (pin 2) ─┤──┬──── PC0 (ADC1_IN10)
            │                   │  │
-  GND  ────┤ CCW (pin 1)      │  C_pot 100nF
+  GND  ────┤ CCW (pin 1)      │  C46 100nF
            └───────────────────┘  │
                                   GND
 ```
 
-The 100 nF cap on the wiper filters mechanical wiper noise and acts
-as an anti-alias filter with the pot's wiper resistance (~50-200 ohm
-at mid-travel for a 10K pot). The resulting RC corner frequency is
-well above the ADC scan rate but rejects RF and switching noise from
-the Eurorack power bus.
+C46 (100 nF) on the wiper acts as a charge reservoir for the ADC's
+sample-and-hold so the pot's high source impedance (~25 kΩ at midpoint
+for a 100 kΩ pot) does not degrade ADC accuracy. RC corner is
+1/(2π × 25 kΩ × 100 nF) ≈ 64 Hz, well below the ADC scan rate but with
+12.5 ms (5τ) settling, which is imperceptible on a hand-turned knob.
+The cap also rejects RF and switching noise from the Eurorack power bus.
 
 ### 3.4 ADC configuration
 
@@ -266,7 +272,7 @@ the Eurorack power bus.
 |---|---|---|
 | ADC peripheral | ADC1 | Same peripheral as CV inputs; add PC0 to the scan group |
 | Resolution | 12-bit | 0.8 mV LSB — more than adequate for a panel knob |
-| Sample time | 56 cycles | Source impedance at worst case (pot at mid-travel) ~5 kOhm; 56 cycles at 21 MHz ADC clock is comfortable |
+| Sample time | 56 cycles | C46 (100 nF wiper-to-GND) acts as the charge source for the ADC S&H, so the effective source impedance during sampling is C46's series resistance (a few mΩ), not the pot's 25 kΩ; 56 cycles is comfortable |
 | Scan order | After CV inputs (PA0, PA1) | Lower priority; pots change slowly relative to CV |
 | Firmware filtering | 8x or 16x moving average | Eliminates wiper noise and provides smooth parameter response; ~1 ms latency at 1 kHz scan rate is imperceptible |
 
@@ -318,9 +324,9 @@ on PB6/PB7.
 | Component | Designator | MPN / LCSC | New? |
 |---|---|---|---|
 | SSD1327 1.5" 128x128 OLED module (SPI, 4-bit grayscale) | OLED1 | Waveshare 1.5inch OLED Module (SSD1327) | **Add** |
-| Alps Alpine EC11E18244AU rotary encoder | ENC1 | EC11E18244AU / LCSC TODO | **Add** |
-| Alps Alpine RK09K1130A5R 10K linear pot (or equiv. 9 mm vertical) | POT1 | RK09K1130A5R / LCSC TODO | **Add** |
-| 10 nF X7R 0805 x3 | C_encA, C_encB, C_encSW | Existing BOM 10 nF line | Reuse |
-| 100 nF X7R 0805 x2 | C_oled, C_pot | Existing BOM 100 nF line | Reuse |
+| Alps Alpine EC11E18244AU rotary encoder | USR-ENC (+ SW1) | EC11E18244AU / LCSC TODO | **Add** |
+| Alps Alpine 100K linear pot (or equiv. 9 mm vertical) | U25 | RK09K1130C0L / LCSC TODO | **Add** |
+| 10 nF X7R 0805 x3 | C44 (A), C45 (B), C43 (SW) | Existing BOM 10 nF line | Reuse |
+| 100 nF X7R 0805 x1 | C46 (pot wiper) | Existing BOM 100 nF line | Reuse |
 | Knob for 6 mm D-shaft (encoder) | — | Davies 1900H or similar | **Add** |
 | Knob for pot shaft | — | Match encoder knob style | **Add** |
