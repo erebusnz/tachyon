@@ -58,6 +58,10 @@ decoupling BOMs:
   rules (one continuous Layer 2 plane, no splits), power pour regions,
   placement zones, and signal routing guidance.
 
+  ![Front PCB 3D render](front-pcb-3d.png)
+
+  ![IO PCB 3D render](io-pcb-3d.png)
+
   ![Backing PCB 3D render](backing-pcb-3d.png)
 
 ### Bring-up
