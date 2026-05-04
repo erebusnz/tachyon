@@ -9,8 +9,9 @@ desktop.ini
 *.swp
 *~
 
-# Claude Code
-.claude/
+# Python bytecode
+__pycache__/
+*.pyc
 
 # EasyEDA auto-backup snapshots (<project>_backup/)
 *_backup/

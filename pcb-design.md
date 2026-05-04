@@ -148,9 +148,9 @@ vias) rather than horizontal (through traces).
 | Region      | Rail          | Footprint under...                                   |
 |-------------|---------------|------------------------------------------------------|
 | `+5V`       | Buck output   | From TPS54202 output to WeAct VIN and both LDO VINs                  |
-| `+3V3`      | WeAct 3V3 out | STM32F405, OLED connector, 74AHCT1G125, PCM5102A DVDD|
+| `+3V3`      | WeAct 3V3 out | STM32F405, OLED connector, PCM5102A DVDD             |
 | `+3V3_PREC` | U14 out       | DAC8552 VDD and REF5025 VIN                          |
-| `+3V3_AUDIO`| U15 out       | PCM5102A AVDD pin 18 and CPVDD pin 12                |
+| `+3V3_AUDIO`| U15 out       | PCM5102A AVDD pin 8 and CPVDD pin 1                  |
 | `+12V`      | P1 (post D1 / L1 ferrite) | OPA1642 V+ (U7 pin 8)                    |
 | `-12V`      | P1 (post D2 / L2 ferrite) | OPA1642 V- (U7 pin 4)                    |
 
@@ -195,85 +195,164 @@ a power-region boundary, move it to Layer 1 instead.
 
 ---
 
-## 5. Component placement zones
+## 5. Component placement (backing-board)
 
-Partitioning is enforced by **where components sit on Layer 1**, not by
-cutting copper. Divide the board into three conceptual zones:
+This section describes the placement strategy for the **backing-board**
+(the dense board: TPS54202 buck, LDOs, STM32 module, audio DAC, CV DAC,
+references, op-amps). The io-board is panel-side and its placement is
+dictated by the panel ergonomics (jack and pot positions). The
+front-board has no electrical content.
+
+### Stratified layout
+
+The backing-board is partitioned by **horizontal stratification** down
+the long axis, not by cardinal quadrants. The board is 48 × 110 mm with
+the Eurorack header (P1) at the top edge.
 
 ```
-┌────────────────────────────────┬───────────────────────────┐
-│                                │                           │
-│  ZONE A: POWER                 │  ZONE B: DIGITAL          │
-│  (top-left, near bus header)   │  (top-right)              │
-│                                │                           │
-│  P1, D1, D2, U12 + L3 (buck    │  WeAct STM32F405 module   │
-│    inductor)                   │  OLED connector           │
-│  C5 / C8                       │  74AHCT1G125 buffer       │
-│  R1 / R2, C7                   │  USB (if exposed)         │
-│  F1 / F2, L1 / L2 ferrites     │  encoders / buttons       │
-│  input bulk caps C1 / C2       │                           │
-│  C3 / C4 HF bypass             │                           │
-│                                │                           │
-├────────────────────────────────┴───────────────────────────┤
-│                                                            │
-│  ZONE C: ANALOG                                            │
-│  (bottom, far from the buck)                               │
-│                                                            │
-│  TPS7A2033 U14 → +3V3_PREC                                 │
-│  TPS7A2033 U15 → +3V3_AUDIO                                │
-│  REF5025, DAC8552, OPA1642                                 │
-│  PCM5102A                                                  │
-│  output jacks (audio + CV)                                 │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  POWER ENTRY STRIP    (top, ~Y = 0 .. -12 mm)         │
+│  U12 TPS54202 buck (top-left, top side)               │
+│  P1 Eurorack header (top-right, BOTTOM side; cable    │
+│      plugs into the back face of the module)          │
+│  D1 / D2 SS14 protection diodes                       │
+│  F1 / F2 PTC fuses, L1 / L2 ferrites                  │
+│  C1 / C2 bulk caps, C3 / C4 HF bypass                 │
+│  C5 (buck input), C6 (BOOT), C7 (FF), C8 (output),    │
+│      L3 (buck inductor), R1 / R2 (FB divider)         │
+├──────────────────────────────────────────────────────┤
+│  UPPER ANALOG BAND    (~Y = -28 .. -48 mm)            │
+│  U14 TPS7A2033 +3V3_PREC LDO                          │
+│  U15 TPS7A2033 +3V3_AUDIO LDO                         │
+│  U2  REF5025 precision reference                      │
+│  U7  OPA1642 CV output buffers                        │
+│  U16 OPA1642 audio output buffers                     │
+├──────────────────────────────────────────────────────┤
+│  MID ANALOG BAND      (~Y = -48 .. -65 mm)            │
+│  U3  PCM5102A audio DAC                               │
+│  U6  DAC8552 CV DAC                                   │
+├──────────────────────────────────────────────────────┤
+│  MCU REGION           (~Y = -75 .. -95 mm)            │
+│  U1  WeAct STM32F405 module — on the BOTTOM side      │
+│      (physically isolated from the analog parts on    │
+│       the top side by the PCB itself)                 │
+│  H4, H9 — IO-board headers (bottom side)              │
+└──────────────────────────────────────────────────────┘
+
+Inter-board headers H2 / H3 sit on the left / right edges between the
+upper and mid analog bands.
 ```
 
-### Placement rules
+The buck noise source is at one extreme of the long axis, the analog
+bands sit in the middle, and the MCU module hides on the back side of
+the PCB. Analog return currents stay on the top half of the GND plane;
+buck switching loop currents stay near U12; MCU digital return
+currents stay near U1's pin headers on the bottom side.
 
-- **The TPS54202 goes in the corner of Zone A furthest from Zone C.**
-  Specifically: maximize the distance from the buck switch node (SW
-  pin + L3 inductor loop) to the PCM5102A and REF5025. 30 mm
-  minimum is a reasonable target for a Eurorack-sized board.
-- **The STM32F405 (WeAct module) sits in Zone B.** Its clock crystal
-  and any high-speed peripheral pins should face *toward* Zone B's
-  interior, not toward Zone C.
-- **The PCM5102A sits at the edge of Zone C closest to the STM32.** I2S
-  traces (MCLK, BCK, LRCK, DATA) are the fastest signals in Zone C,
-  so they need to be as short as possible to minimize their exposure.
-  Route them on Layer 1 with Layer 2 directly underneath as reference.
-- **The REF5025 and DAC8552 sit in the opposite corner of Zone C from
-  the PCM5102A.** This keeps the precision DC reference as far as
-  possible from the I2S clock edges.
-- **The OPA1642 (U7) sits between the DAC8552 and the CV output jacks,** so
-  its output traces to the jacks are short and its input traces from
-  the DAC are short.
-- **Both TPS7A2033 LDOs sit at the Zone C border, on the side facing
-  Zone A.** They receive +5V from Zone A and deliver `+3V3_PREC` /
-  `+3V3_AUDIO` into Zone C. Placing them on the border minimizes the
-  length of noisy +5V copper inside Zone C.
-- **Decoupling caps:** every IC's decoupling cap must be on the same
-  side of the board as the IC, within 2 mm of the power pin it
-  decouples, with its GND via directly adjacent to the cap pad.
+### Spacing rules
+
+Placement is constrained by these distance invariants. The audit script
+(`run_audit.py`'s `SPACING_RULES`) enforces them automatically; keep
+the two in sync.
+
+| Constraint                       | Threshold | Rationale                                                          |
+|----------------------------------|-----------|--------------------------------------------------------------------|
+| `U12 ↔ U3` (buck ↔ audio DAC)    | ≥ 30 mm   | Switch-node loop must be far from the audio DAC to avoid radiative coupling. |
+| `U12 ↔ U2` (buck ↔ ref)          | ≥ 30 mm   | Switch-node loop must be far from the precision Vref. |
+| `U12 ↔ U16` (buck ↔ audio op-amp)| ≥ 30 mm   | Audio output buffers are as sensitive as the DAC; same rule applies. |
+| `U2 ↔ U6` (REF5025 ↔ DAC8552)    | ≤ 20 mm   | `VREF_2V5` analog trace must be short (`cv-output-dac.md` §6). |
+
+Adjacency / orientation rules that don't reduce to a single distance:
+
+- **U12 (TPS54202) sits at the top edge** of the board so the buck
+  switch-node loop closes locally on Layer 1 with C5 (input) → VIN →
+  GND → C5, ≤ 5 mm² loop area target.
+- **U7 (OPA1642 CV)** sits adjacent to U6 (DAC8552) so DAC → buffer
+  traces are short. CV output traces from U7 then run to H3 on the
+  right edge.
+- **U16 (OPA1642 audio)** sits adjacent to U3 (PCM5102A) so PCM5102A
+  OUTL/OUTR → buffer inputs are short. Audio output traces from U16
+  run to H2 on the left edge.
+- **U14 / U15 LDOs** sit between the power-entry strip and the upper
+  analog band, so the noisy +5 V copper terminates at the LDO inputs
+  and only the regulated `+3V3_PREC` / `+3V3_AUDIO` rails reach the
+  analog bands.
+- **U1 (WeAct STM32 module) on the bottom side** keeps the digital
+  switching noise on the opposite face of the PCB from the analog
+  ICs. The WeAct module has its own onboard 3V3 LDO and decoupling;
+  no per-pin bypass caps from the main PCB are required.
+
+### Decoupling caps
+
+Every IC's decoupling cap must be on the same side of the board as the
+IC, within 2 mm of the power pin it decouples, with its GND via directly
+adjacent to the cap pad. The audit reports the centre-to-centre
+distance from each cap to its IC; ≤ 8 mm centre-to-centre on 0805 caps
+is the practical equivalent of the 2 mm pin-to-cap rule.
+
+Sub-modules with onboard decoupling (currently the WeAct STM32F405
+module, U1) are exempt — those rely on their internal bypass network
+and only need a single bulk cap at the module's `+5 V` input pin.
 
 ### The I2S bridge
 
-The I2S signals cross from Zone B to Zone C. This is the one place
-on the board where a fast digital signal enters analog territory.
-Mitigations:
+The I2S signals (`I2S3_BCK`, `I2S3_SD`, `I2S3_WS`) run from U1 (STM32,
+bottom side) to U3 (PCM5102A, top side, mid analog band). This is the
+one place on the board where a fast digital signal must transition
+between layers and enter the analog half. Mitigations:
 
-1. **Route on Layer 1 only.** Layer 2 directly beneath gives a clean
-   reference.
-2. **Keep the traces short** -- under 30 mm if possible, under 50 mm
-   at the absolute maximum.
-3. **Series termination** at the source (STM32 or 74AHCT1G125): place
-   a 33 Ω resistor on each I2S line within 5 mm of the driver. This
-   damps ringing and slows edge rates to reduce radiation.
-4. **Ground-flanked routing.** Run a ground pour on Layer 1 on both
-   sides of the I2S bundle, stitched to Layer 2 every ~3 mm with vias.
-   This turns the traces into a crude coplanar waveguide and contains
-   the return current locally.
-5. **No other signals in the I2S corridor.** The strip of board
-   between Zone B and the PCM5102A is reserved for I2S and ground.
+1. **Route on Layer 1 over Layer 2 GND** for the segment on the top
+   side. Drop a stitching via to Layer 2 GND adjacent to each
+   layer-transition via.
+2. **Keep total trace length short** — under 30 mm preferred, under
+   50 mm absolute. Centre-to-centre U1 ↔ U3 is ~28 mm; routed length
+   will be slightly longer.
+3. **Ground-flanked routing.** Run a ground pour on Layer 1 on both
+   sides of the I2S bundle, stitched to Layer 2 every ~3 mm with vias,
+   for the segment closest to the analog band.
+4. **No other signals in the I2S corridor.** The strip of board
+   between U1 and U3 is reserved for I2S and ground only.
+
+There is no buffer IC in the I2S path — earlier revisions of this
+document referenced a 74AHCT1G125 (U4); that part was dropped because
+the PCM5102A's internal PLL handles the clock-domain transition and
+the STM32 I2S drive strength is adequate at the trace lengths on this
+board.
+
+#### Series termination — not required at this trace length
+
+Earlier revisions of this section mandated 33 Ω series termination
+at the STM32 I2S output. That rule was over-conservative for the
+trace lengths on this board.
+
+Howard Johnson's rule of thumb: a trace is electrically short and
+needs no termination when its length is less than `t_r × v / 6`,
+where `t_r` is the source rise time and `v` is the FR4 propagation
+velocity (~167 mm/ns).
+
+| STM32F405 GPIO speed | `t_r` | Critical length | This board's I2S trace |
+|----------------------|------:|----------------:|-----------------------:|
+| Low (2 MHz)          | 100 ns | 2800 mm         | 30-40 mm  (90× margin) |
+| Medium (25 MHz)      | 10 ns  | 280 mm          | 30-40 mm  (7× margin)  |
+| Fast (50 MHz)        | 4 ns   | 110 mm          | 30-40 mm  (3× margin)  |
+| High (100 MHz)       | 2 ns   | 56 mm           | 30-40 mm  (1.5× margin)|
+
+The I2S signals are at audio rates (≤ 12.288 MHz BCK at 192 kHz / 64-fs),
+so the firmware can — and should — set the I2S GPIO pins to **low or
+medium speed**. At those speed settings the trace is electrically
+short by a wide margin, reflections die out before edges transition,
+and series termination delivers no measurable improvement (and can
+slow edges enough to degrade the signal).
+
+**Implementation note for firmware:** configure `PB3 (I2S3_BCK)`,
+`PB5 (I2S3_SD)`, and `PA15 (I2S3_WS)` with
+`GPIO_Speed_Level_Low` or `_Medium` in the I2S init code. Do not use
+`_High` or `_Very_High`.
+
+If a future redesign stretches the I2S trace beyond ~50 mm, or moves
+to a faster receiver where edge rate must come up, revisit this
+calculation. Until then the netlist correctly omits termination
+resistors.
 
 ---
 

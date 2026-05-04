@@ -33,8 +33,7 @@ Eurorack +12V (P1) ──> D1 (SS14) ──> L1 (BLM21AG601SN1D ferrite) ──>
                                          │            REF5025 VIN          PCM5102A CPVDD
                                          ▼
                                 STM32F405, OLED,
-                                PCM5102A DVDD,
-                                logic, 74AHCT1G125
+                                PCM5102A DVDD
 
                                        +12V ────────────────────────────────> OPA1642 V+ (U7 CV buffers, U16 audio buffers)
 
@@ -60,7 +59,6 @@ Notes:
 |---|---|---|---|---|
 | STM32F405 @ 168 MHz | +3V3 (WeAct LDO) | 80 mA | 150 mA | Peak with USB enumeration / I/O activity |
 | SSD1327 OLED 128x128 | +3V3 (WeAct LDO) | 15 mA | 30 mA | 4-bit grayscale; panel VCC from on-board boost |
-| 74AHCT1G125 buffer | +3V3 (WeAct LDO) | 1 mA | 2 mA | |
 | PCM5102A DVDD | +3V3 (WeAct LDO) | 3 mA | 5 mA | Internal LDO drops to 1.8 V |
 | **Subtotal +3V3 (digital)** | | **~100 mA** | **~190 mA** | Comes out of WeAct onboard LDO |
 | PCM5102A AVDD | +3V3_AUDIO | 17 mA | 20 mA | |
@@ -229,7 +227,7 @@ REF5025's VIN noise; both parts then contribute their own line regulation
 (≤ 3 ppm/V on the REF5025) so the shared rail is a non-issue for
 precision.
 
-**U15 → `+3V3_AUDIO`** feeds: PCM5102A AVDD (pin 18) and CPVDD (pin 12).
+**U15 → `+3V3_AUDIO`** feeds: PCM5102A AVDD (pin 8) and CPVDD (pin 1).
 
 Per-LDO support components:
 
@@ -255,8 +253,7 @@ USB peripherals, and on-board indicators. We feed this LDO from our local
 +5 V rail and tap **+3V3** off the WeAct board's 3V3 pin to power:
 
 - OLED (SSD1327 1.5")
-- PCM5102A DVDD (pin 19)
-- 74AHCT1G125 buffer (U4)
+- PCM5102A DVDD (pin 20)
 - Any other logic on the digital plane
 
 We do **not** add a third external LDO for digital +3V3 -- the WeAct

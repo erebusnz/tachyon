@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python .claude/skills/pcb-designer/scripts/*.py:*)",
+      "Bash(python .claude/skills/pcb-designer/scripts/*.py)",
+      "Read(*.md)",
+      "Read(**/*.md)"
+    ]
+  }
+}
