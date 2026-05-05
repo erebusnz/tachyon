@@ -2,10 +2,10 @@
 
 An open-hardware Eurorack step sequencer with onboard voice, built
 around the STM32F405RGT6 (WeAct core board). Tachyon generates two
-precision 1 V/oct CV outputs, two +5 V gate outputs, and a stereo
-audio pair, accepts two CV modulation inputs and an external clock,
-and is navigated via a rotary encoder, a panel pot, and a 128×128
-OLED.
+precision 1 V/oct CV outputs, two +5 V gate outputs, and two
+audio outputs, accepts two CV modulation inputs and an external clock,
+and is navigated via a rotary encoder, a parameter adjustment pot,
+and a 128×128 OLED screen.
 
 ## At a glance
 
@@ -97,12 +97,14 @@ bottom side). The boards mate via inter-board pin headers.
 ### Manufacturing outputs
 
 The [`gerber/`](gerber/) folder holds the latest fab/assembly
-exports for all three boards: Gerber zips, Allegro Telesis (`.tel`)
-netlists, and pick-and-place CSVs, plus the per-board audit reports
-(`audit-front-board.md`, `audit-io-board.md`,
-`audit-backing-board.md`) that cross-check each export against the
-design docs. Combined per-board schematic PDFs live at the repo
-root: [`io-board-schematic.pdf`](io-board-schematic.pdf),
+exports for all three boards, plus the per-board audit reports
+([`audit-front-board.md`](gerber/audit-front-board.md),
+[`audit-io-board.md`](gerber/audit-io-board.md),
+[`audit-backing-board.md`](gerber/audit-backing-board.md))
+created by the included [`pcb-designer`](.claude/skills/pcb-designer/)
+skill for Claude that cross-check each export against the design
+docs. Combined per-board schematic PDFs live at the repo root:
+[`io-board-schematic.pdf`](io-board-schematic.pdf),
 [`mcu-audio-board-schematic.pdf`](mcu-audio-board-schematic.pdf).
 The EasyEDA Pro source project is [`tachyon.eprj`](tachyon.eprj).
 
@@ -125,6 +127,20 @@ paragraph matters.
 
 - **[firmware/README.md](firmware/README.md)** — DFU flashing
   instructions and firmware build notes.
+
+### Software required
+
+- **EasyEDA** — schematic/PCB design
+- **Claude Code** — schematic/PCB validation and planning
+- **STM32CubeMX** — STM32 peripheral and clock configuration
+- **Claude Code** — firmware development
+
+Both hardware (schematic/PCB) and firmware design are supported in
+Claude Code. The included markdown files — including MD versions of
+the datasheets for key components — for the hardware design and the
+[`pcb-designer`](.claude/skills/pcb-designer/) skill allow Claude to
+reason about design changes to both hardware and software without
+needing additional context to be shared within Claude.
 
 ## Licence
 
