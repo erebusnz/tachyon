@@ -47,6 +47,7 @@
 ADC_HandleTypeDef hadc1;
 
 I2S_HandleTypeDef hi2s3;
+DMA_HandleTypeDef hdma_spi3_tx;
 
 SD_HandleTypeDef hsd;
 
@@ -64,6 +65,7 @@ TIM_HandleTypeDef htim4;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_I2S3_Init(void);
@@ -114,6 +116,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USB_DEVICE_Init();
   MX_SPI1_Init();
   MX_TIM4_Init();
@@ -258,6 +261,21 @@ static void MX_ADC1_Init(void)
 
   /* USER CODE END ADC1_Init 2 */
 
+}
+
+/**
+  * Enable DMA controller clock and the SPI3_TX stream interrupt.
+  * Must run before MX_I2S3_Init so the DMA link in HAL_I2S_MspInit is valid.
+  */
+static void MX_DMA_Init(void)
+{
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init: SPI3_TX = DMA1_Stream5. Low priority so the USB CDC
+   * and SysTick IRQs always preempt the (sinf-heavy) audio refill callback. */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 8, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
 }
 
 /**

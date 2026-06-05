@@ -44,15 +44,20 @@ void console_rx_byte(uint8_t b)
 
 /* ---- background jobs serviced from console_poll ---- */
 #define I2S_FS     192000.0f
-#define TONE_FRAMES 128
+/* Continuous circular DMA buffer of DMA_FRAMES stereo frames, refilled one half
+ * at a time from the I2S Tx half/complete callbacks. Streaming never stops, so
+ * BCK/LRCK run continuously — the PCM5102A soft-mutes if its clocks halt, which
+ * is why blocking per-buffer transmits left the output silent. 4 halfwords per
+ * frame: L_hi,L_lo,R_hi,R_lo (32-bit I2S sent as halfword pairs). */
+#define DMA_FRAMES  256
 #define TONE_AMP    0x30000000  /* ~0.375 full-scale, headroom against clipping */
 #define TWO_PI      6.283185307179586f
 
 static struct {
-  uint8_t  active;
+  uint8_t  active;                 /* 1 = emit sine, 0 = emit digital silence */
   float    phase;
   float    inc;
-  uint16_t buf[TONE_FRAMES * 4];   /* L_hi,L_lo,R_hi,R_lo per frame */
+  uint16_t buf[DMA_FRAMES * 4];
 } tone;
 
 static struct {
@@ -118,12 +123,20 @@ static float cv_in_volts(uint16_t code)
   return (1.663f - vadc) / 0.330f;
 }
 
-static void tone_fill(void)
+/* Fill one half (DMA_FRAMES/2 frames) of the circular buffer. When the tone is
+ * inactive we still write zeros so the clocks keep running and the DAC stays
+ * locked/unmuted, just outputting silence. Runs in DMA IRQ context. */
+static void tone_fill_half(int half)
 {
-  for (int i = 0; i < TONE_FRAMES; i++) {
-    int32_t s = (int32_t)((float)TONE_AMP * sinf(tone.phase));
-    tone.phase += tone.inc;
-    if (tone.phase >= TWO_PI) tone.phase -= TWO_PI;
+  int start = half ? (DMA_FRAMES / 2) : 0;
+  int end   = start + (DMA_FRAMES / 2);
+  for (int i = start; i < end; i++) {
+    int32_t s = 0;
+    if (tone.active) {
+      s = (int32_t)((float)TONE_AMP * sinf(tone.phase));
+      tone.phase += tone.inc;
+      if (tone.phase >= TWO_PI) tone.phase -= TWO_PI;
+    }
     uint16_t hi = (uint16_t)((uint32_t)s >> 16);
     uint16_t lo = (uint16_t)((uint32_t)s & 0xFFFF);
     tone.buf[i * 4 + 0] = hi;  /* L */
@@ -131,6 +144,27 @@ static void tone_fill(void)
     tone.buf[i * 4 + 2] = hi;  /* R */
     tone.buf[i * 4 + 3] = lo;
   }
+}
+
+/* Circular Tx DMA callbacks: refill the half the DMA just finished playing
+ * (HalfCplt = first half, Cplt = second half). The other half is being read. */
+void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
+{
+  if (hi2s->Instance == SPI3) tone_fill_half(0);
+}
+void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s)
+{
+  if (hi2s->Instance == SPI3) tone_fill_half(1);
+}
+
+/* Start the never-ending circular stream (called once from console_init).
+ * Size = count of 32-bit samples (L+R) = DMA_FRAMES*2; for 32-bit data format
+ * the HAL doubles it internally to DMA_FRAMES*4 halfwords = the whole buffer. */
+static void tone_stream_start(void)
+{
+  tone_fill_half(0);
+  tone_fill_half(1);
+  HAL_I2S_Transmit_DMA(&hi2s3, tone.buf, DMA_FRAMES * 2);
 }
 
 /* ---- OLED status display ----
@@ -426,6 +460,10 @@ void console_init(void)
   dac_write(1, 0);
   HAL_GPIO_WritePin(MUTE_N_GPIO_Port, MUTE_N_Pin, GPIO_PIN_RESET); /* start muted */
 
+  /* Start the continuous I2S stream now (silence until `tone` is issued). The
+   * PCM5102A needs uninterrupted BCK/LRCK to stay out of soft-mute. */
+  tone_stream_start();
+
   tick_1ms_prev = HAL_GetTick();
 
   disp_title("TACHYON TEST");
@@ -481,11 +519,9 @@ static void service_jobs(void)
     disp_line(1, "pot = %u", v[2]);
   }
 
-  /* tone playback: blocking burst per buffer (~0.67 ms at 192 kHz) */
-  if (tone.active) {
-    tone_fill();
-    HAL_I2S_Transmit(&hi2s3, tone.buf, TONE_FRAMES * 2, 10);
-  }
+  /* tone playback runs entirely off the circular I2S DMA (started in
+   * console_init); the half/complete callbacks refill the buffer, so there is
+   * nothing to service here. */
 
   disp_service(now);
 }
