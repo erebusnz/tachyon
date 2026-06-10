@@ -272,6 +272,21 @@ For the current board's gerber directory:
    Mismatches typically point to stale pin numbers in the doc; cross-
    reference with the IC's local datasheet markdown to decide which
    side is wrong.
+4a. **Mandatory power/ground pin connectivity** (datasheet-driven). For
+   each IC in `run_audit.py`'s `DATASHEET_BY_DESIGNATOR` map, the script
+   parses that part's `datasheets/<PART>.md` `## Pinout` table and, for
+   every pin whose Direction column is `P` (power) or `G` (ground),
+   asserts the pin is a member of a real (multi-pin) net — ground pins
+   specifically on a ground net. A required supply/GND pin netlisted as a
+   no-connect is a layout/schematic **error**: a logical rail check
+   passes it, but the part reads dead or DC-offset on the bench. This is
+   the class of the U6 (DAC8552) pin-8 GND omission. `DNC`/`NC` pins
+   (Direction `--`/`NC`) are excluded so deliberately-floating pins don't
+   trip it. Unlike `EXPECTED_IC_PINS` (a hand-maintained allow-list that
+   can silently omit a pin), this derives the complete power/GND pin set
+   straight from the datasheet. *Netlist-only check — it cannot see a
+   cold/open solder joint on an assembled board; that needs physical
+   continuity testing.*
 5. **Eurorack power-bus header check** when the board hosts a 10/16-pin
    IDC bus connector. See `references/eurorack-power.md` for the
    standard pinouts. The script checks pin count, rail-pair adjacency
@@ -549,6 +564,14 @@ doc was right."
 - It does not parse the `.eprj` directly. The Telesis netlist + PnP +
   Gerber exports are the contract; the SQLite schema is undocumented
   and version-coupled.
+- It does not detect **assembly defects** on a physical board — cold or
+  open solder joints, tombstoning, bridges from reflow. The audit reads
+  the design exports, not the built hardware; a pin can be perfectly
+  netlisted yet open on the bench. Catch those with physical continuity
+  testing / inspection. (The closest design-side guard is Pass 2's
+  mandatory power/ground pin check, which catches a pin left unconnected
+  *in the schematic* — not one that's connected in the design but
+  unsoldered on the board.)
 
 ---
 

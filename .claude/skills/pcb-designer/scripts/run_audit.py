@@ -106,6 +106,25 @@ EXPECTED_IC_PINS = {
     ("backing-board", "U15", "5"): "+3V3_AUDIO",
 }
 
+# Datasheet markdown per designator (Pass 2 mandatory power/ground pin check).
+# The datasheets' own "Designator" BOM field is unreliable for multi-instance
+# parts (e.g. OPA1642.md lists only "U7" though the part is U7/U16/U23), so the
+# mapping is explicit here. Only discrete ICs with a pinout table belong here;
+# the WeAct STM32F405 module (U1) is excluded — its supply lands on module
+# header pins, not the bare-chip pinout. Parts without a datasheet .md
+# (TPS54202 U12, TPS7A20 U14/U15) are simply not checked.
+DATASHEET_BY_DESIGNATOR = {
+    "U6":  "datasheets/DAC8552.md",   # backing
+    "U2":  "datasheets/REF5025.md",   # backing
+    "U7":  "datasheets/OPA1642.md",   # backing
+    "U16": "datasheets/OPA1642.md",   # backing
+    "U23": "datasheets/OPA1642.md",   # io-board
+    "U3":  "datasheets/PCM5102A.md",  # backing
+}
+
+# Net names treated as "ground" for the mandatory-pin check.
+GROUND_NET_NAMES = {"GND", "AGND", "DGND", "PGND", "VSS", "VSSA"}
+
 # Decoupling distance rule (Pass 3): cap centre to IC centre threshold (mm).
 DECOUPLING_DIST_MAX_MM = 8.0  # 0805 cap centre-to-IC-centre, lenient
 
@@ -230,6 +249,39 @@ def index_tel(tel: dict) -> dict:
 
 def index_pnp(pnp: list[dict]) -> dict[str, dict]:
     return {r["designator"]: r for r in pnp if r.get("designator")}
+
+
+_DS_PIN_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|")
+
+def parse_datasheet_power_ground_pins(path: Path) -> dict[str, tuple[str, str]]:
+    """Parse a datasheet markdown's `## Pinout` table.
+
+    Returns {pin_number: (kind, name)} for power/ground pins only, where kind
+    is "GND" (Direction column 'G') or "PWR" (Direction 'P'). Signal pins
+    (I/O) and DNC/NC pins (Direction '--'/'NC') are excluded, so a pin left
+    deliberately unconnected never trips the check. Classification keys on the
+    Direction column, which is consistent across this project's datasheets
+    (legend: I=Input, O=Output, P=Power, G=Ground)."""
+    if not path.exists():
+        return {}
+    out: dict[str, tuple[str, str]] = {}
+    in_pinout = False
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        s = raw.strip()
+        if s.startswith("## "):
+            in_pinout = s.lower().startswith("## pinout")
+            continue
+        if not in_pinout:
+            continue
+        m = _DS_PIN_ROW_RE.match(s)
+        if not m:
+            continue
+        pin, name, direction = m.group(1), m.group(2).strip(), m.group(3).strip().upper()
+        if direction == "G":
+            out[pin] = ("GND", name)
+        elif direction == "P":
+            out[pin] = ("PWR", name)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +445,9 @@ def pass2_nets(rep: BoardReport) -> None:
                 "Verify which is correct against the device datasheet — the "
                 "common case is the doc has stale pin numbers."))
 
+    # Datasheet-driven mandatory power/ground pin connectivity
+    check_mandatory_power_pins(rep, idx)
+
     # 74AHCT1G125 buffer: only stale if the docs treat it as a *live*
     # part. A historical mention ("earlier revisions referenced X; that
     # part was dropped because ...") is fine and should not trigger.
@@ -421,6 +476,58 @@ def pass2_nets(rep: BoardReport) -> None:
     # Eurorack header check (Pass 2 step 5)
     if rep.name == "backing-board":
         check_eurorack_header(rep, idx)
+
+
+def check_mandatory_power_pins(rep: BoardReport, idx: dict) -> None:
+    """Pass 2: every datasheet-declared power/ground pin must be connected.
+
+    Reads each IC's datasheet pinout (DATASHEET_BY_DESIGNATOR) and asserts that
+    every Power/Ground pin is a member of a real (multi-pin) net — ground pins
+    specifically on a ground net. Catches a required supply/GND pin left
+    floating in the schematic (netlisted as a no-connect): a logical rail check
+    passes such a board, but on the bench the part reads dead or DC-offset.
+    This is the class of fault that the U6 pin-8 GND omission belonged to.
+
+    Limitation: this is a *netlist* check. It cannot see a cold/open solder
+    joint on an assembled board (an assembly defect) — that needs physical
+    continuity testing."""
+    checked = ics = fails = 0
+    for ref, ds_rel in sorted(DATASHEET_BY_DESIGNATOR.items()):
+        if ref not in idx["fp"]:
+            continue   # this IC is not populated on this board
+        pins = parse_datasheet_power_ground_pins(Path(ds_rel))
+        if not pins:
+            rep.notes.append(
+                f"Power/GND pin check: no pinout table parsed from {ds_rel} "
+                f"(for {ref}) — skipped.")
+            continue
+        ics += 1
+        for pin, (kind, name) in sorted(pins.items(), key=lambda kv: int(kv[0])):
+            checked += 1
+            actual = idx["ref_pins"].get(ref, {}).get(pin)
+            kindword = "ground" if kind == "GND" else "power"
+            if actual is None:
+                fails += 1
+                rep.findings.append(Finding(
+                    "error", "Pass 2",
+                    f"{ref} pin {pin} ({name}) — required {kindword} pin per "
+                    f"{ds_rel} — is NOT connected to any net (floating / "
+                    "no-connect).",
+                    "A required supply/ground pin left floating reads as a dead "
+                    "or DC-offset part on the bench (cf. the U6 pin-8 GND "
+                    "omission). Wire it to the correct rail in the schematic."))
+            elif kind == "GND" and actual.upper() not in GROUND_NET_NAMES:
+                fails += 1
+                rep.findings.append(Finding(
+                    "error", "Pass 2",
+                    f"{ref} pin {pin} ({name}) — required ground pin per "
+                    f"{ds_rel} — is on net `{actual}`, not a ground net.",
+                    "Verify the schematic ties this pin to GND."))
+    if checked and not fails:
+        rep.notes.append(
+            f"Datasheet power/ground pin connectivity: {checked} power/GND "
+            f"pin(s) across {ics} IC(s) all connected ✓ (would flag a floating "
+            "supply/GND pin, e.g. the U6 pin-8 GND case).")
 
 
 def check_eurorack_header(rep: BoardReport, idx: dict) -> None:
