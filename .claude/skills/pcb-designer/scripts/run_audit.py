@@ -39,10 +39,17 @@ from inspect_gerber import inspect_dir  # noqa: E402
 # ---------------------------------------------------------------------------
 
 EXPECTED_BOARDS = {
-    # Telesis filename stem -> (gerber subdir, PnP filename glob)
-    "front-board":   ("front-board",     "PickAndPlace_Front_*.csv"),
-    "io-board":      ("io-board",        "PickAndPlace_IO_*.csv"),
-    "backing-board": ("audio-mcu-board", "PickAndPlace_Backing_*.csv"),
+    # Telesis filename stem -> (gerber subdir, PnP glob, netlist globs)
+    # Netlist globs cover both the canonical skill name
+    # (Netlist_<board>-schematic_*.tel) and EasyEDA Pro's default export
+    # name (Netlist_<ShortName>_*.tel) so a default-named export is still
+    # found instead of silently skipping Passes 2-6 with a false "clean".
+    "front-board":   ("front-board",     "PickAndPlace_Front_*.csv",
+                      ("Netlist_front-board-schematic_*.tel", "Netlist_Front_*.tel")),
+    "io-board":      ("io-board",        "PickAndPlace_IO_*.csv",
+                      ("Netlist_io-board-schematic_*.tel", "Netlist_IO_*.tel")),
+    "backing-board": ("audio-mcu-board", "PickAndPlace_Backing_*.csv",
+                      ("Netlist_backing-board-schematic_*.tel", "Netlist_Backing_*.tel")),
 }
 
 # Per-board expected rail set (for Pass 2). The front-board has no
@@ -190,9 +197,12 @@ def newest(paths: list[Path]) -> Path | None:
 def discover(gerber_dir: Path) -> dict[str, dict[str, Path | None]]:
     """Return {board_name: {tel, pnp, gerber_subdir}}."""
     out: dict[str, dict[str, Path | None]] = {}
-    for board, (subdir, pnp_glob) in EXPECTED_BOARDS.items():
+    for board, (subdir, pnp_glob, tel_globs) in EXPECTED_BOARDS.items():
+        tel_matches: list[Path] = []
+        for g in tel_globs:
+            tel_matches.extend(gerber_dir.glob(g))
         out[board] = {
-            "tel":    newest(list(gerber_dir.glob(f"Netlist_{board}-schematic_*.tel"))),
+            "tel":    newest(tel_matches),
             "pnp":    newest(list(gerber_dir.glob(pnp_glob))),
             "gerber": (gerber_dir / subdir) if (gerber_dir / subdir).is_dir() else None,
         }

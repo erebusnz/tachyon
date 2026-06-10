@@ -27,7 +27,7 @@ Source references:
 |---|---|---|
 | DAC resolution | 16-bit | ~0.013 cents per step at 1 V/oct — full calibration headroom |
 | DAC channels | 2 (DAC A, DAC B) | One per CV output; no spare channels for accent/mod |
-| DAC VREF | 2.500 V from REF5025 (pin 6) | Sets DAC full-scale to 2.500 V |
+| DAC VREF | 2.500 V from REF5025 (pin 6); net named `VREF` | Sets DAC full-scale to 2.500 V (the 2.5 V precision reference net is `VREF` — not to be confused with the STM32 ADC VREF+, which is the `+3V3` rail) |
 | DAC SPI mode | Mode 1 (CPOL = 0, CPHA = 1) | Clocks in on falling SCLK edge |
 | SPI bus | SPI2 (dedicated — OLED is on separate SPI1) | No bus contention or SPI mode conflict |
 | Reference | REF5025IDR, 2.5 V, 3 ppm/°C | Drives DAC8552 VREF at 2.500 V |
@@ -73,7 +73,7 @@ The REF5025 and OPA1642 consume **no MCU pins** — both are purely analog.
 | Pin | Name | Connection |
 |---|---|---|
 | 1 | VDD | `+3V3_PREC` via C18 (1 µF) + C19 (100 nF) decoupling |
-| 2 | VREF | `VREF_2V5` from U2 (REF5025) pin 6, decoupled with C20 (1 µF) + C21 (100 nF) |
+| 2 | VREF | `VREF` from U2 (REF5025) pin 6, decoupled with C20 (1 µF) + C21 (100 nF) |
 | 3 | VOUTB | To U7.1 +IN A (pin 3) — drives **CV-OUT-A** jack (channels cross-wired — see note below) |
 | 4 | VOUTA | To U7.2 +IN B (pin 5) — drives **CV-OUT-B** jack (channels cross-wired — see note below) |
 | 5 | SYNC | `DAC-SPI-CS` → STM32 PB1 |
@@ -83,11 +83,16 @@ The REF5025 and OPA1642 consume **no MCU pins** — both are purely analog.
 
 > **Channel swap (PCB-placement driven):** DAC8552 `VOUTA` (pin 4) feeds the
 > CV-OUT-**B** jack via U7.2, and `VOUTB` (pin 3) feeds the CV-OUT-**A** jack
-> via U7.1. Firmware must therefore set DB[21] = **1** (DAC channel B) to
-> drive the physical CV-OUT-A jack, and DB[21] = **0** (DAC channel A) for
-> CV-OUT-B. The bit flip lives in the DAC driver; the `cv_cal[]` table in
+> via U7.1. Firmware must therefore drive **DAC channel B** to reach the physical
+> CV-OUT-A jack, and **DAC channel A** for CV-OUT-B. Channel select is the
+> **buffer-select bit DB18** (0 = DAC A, 1 = DAC B), *not* DB21 — use the canonical
+> control bytes **0x24 = write+update DAC B** (CV-OUT-A jack) and **0x10 =
+> write+update DAC A** (CV-OUT-B jack). See `datasheets/DAC8552.md` §Application
+> Notes. The select lives in the DAC driver; the `cv_cal[]` table in
 > `calibration.md` remains indexed by physical jack (0 = CV-OUT-A,
 > 1 = CV-OUT-B) so calibration and user-facing menus are unaffected.
+> **(Corrected 2026-06-10 — was wrongly written as "set DB[21]=1"; that bit is
+> the load-B control, not the channel select, and the bug left VOUTB dead.)**
 
 ### U2 — REF5025IDR (SOIC-8)
 
@@ -98,7 +103,7 @@ The REF5025 and OPA1642 consume **no MCU pins** — both are purely analog.
 | 3 | TEMP | No connect (leave floating) |
 | 4 | GND | GND (Layer 2 plane) |
 | 5 | TRIM/NR | Noise-reduction cap C17 (100 nF) to GND |
-| 6 | VOUT | `VREF_2V5` → U6 DAC8552 pin 2 via C16 decoupling |
+| 6 | VOUT | `VREF` → U6 DAC8552 pin 2 via C16 decoupling |
 | 7 | NC | No connect |
 | 8 | DNC | Do not connect (leave floating) |
 
@@ -138,7 +143,7 @@ lands on:
 | Part | Pin | Rail |
 |---|---|---|
 | U6 DAC8552 | VDD (pin 1) | `+3V3_PREC` |
-| U2 REF5025 | VIN (pin 2) | `+3V3_PREC` (0.6 V over the REF5025 VS_min = 2.7 V hard floor per datasheet §6.5; moved onto the LDO rail so U2 can sit next to U6 and keep the `VREF_2V5` trace < 20 mm per §6) |
+| U2 REF5025 | VIN (pin 2) | `+3V3_PREC` (0.6 V over the REF5025 VS_min = 2.7 V hard floor per datasheet §6.5; moved onto the LDO rail so U2 can sit next to U6 and keep the `VREF` trace < 20 mm per §6) |
 | U7 OPA1642 | V+ (pin 8) / V− (pin 4) | `+12V` / `−12V` (Eurorack) |
 
 ---
@@ -154,7 +159,7 @@ part where practical, with short fat traces to GND.
 |---|---|---|---|---|
 | C18 | 1 µF | 0805 X7R | VDD (pin 1) – GND | Bulk on `+3V3_PREC` |
 | C19 | 100 nF | 0805 | VDD (pin 1) – GND | HF bypass, closest to pin |
-| C20 | 1 µF | 0805 X7R | VREF (pin 2) – GND | Bulk on `VREF_2V5`; low-impedance source is mandatory (`DAC8552.md:75`) |
+| C20 | 1 µF | 0805 X7R | VREF (pin 2) – GND | Bulk on `VREF`; low-impedance source is mandatory (`DAC8552.md:75`) |
 | C21 | 100 nF | 0805 | VREF (pin 2) – GND | HF bypass, closest to pin |
 
 ### U2 — REF5025 decoupling (per `datasheets/REF5025.md` Application Notes)
@@ -256,7 +261,7 @@ CV-path-specific notes on top of that:
   trace close to the op-amp. Route these two ground-leg vias adjacent
   to the op-amp body, not back at the DAC or reference, so the feedback
   loop sees a local low-impedance return.
-- **VREF routing:** `VREF_2V5` from U2 pin 6 to U6 pin 2 is a
+- **VREF routing:** `VREF` from U2 pin 6 to U6 pin 2 is a
   code-dependent load (`DAC8552.md:75`). Keep this trace short (< 20 mm),
   reasonably wide (0.3 mm+), and run it directly over Layer 2 — do not
   let it cross any split or any noisy corridor. C16 (at U2) and

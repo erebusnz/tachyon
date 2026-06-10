@@ -53,6 +53,16 @@ HEADER_FOOTPRINT_PATTERNS = [
 HEADER_RE = re.compile("|".join(HEADER_FOOTPRINT_PATTERNS), re.IGNORECASE)
 
 
+# EasyEDA Pro's default short export names -> canonical board stem.
+# Keeps header-pair matching (which keys on the canonical stems) working
+# whether the netlist was saved with the skill name or the EasyEDA default.
+_BOARD_ALIASES = {
+    "front":   "front-board",
+    "io":      "io-board",
+    "backing": "backing-board",
+}
+
+
 def _board_name_from_filename(stem: str) -> str:
     """Extract a canonical board id from an EasyEDA Pro export filename.
 
@@ -60,14 +70,15 @@ def _board_name_from_filename(stem: str) -> str:
         'Netlist_io-board-schematic_2026-05-04' -> 'io-board'
         'Netlist_front-board-schematic_2026-05-04' -> 'front-board'
         'Netlist_backing-board-schematic_2026-05-04' -> 'backing-board'
+        'Netlist_Backing_2026-06-05' -> 'backing-board'  (EasyEDA default name)
     Falls back to the stem itself if no pattern matches.
     """
     m = re.match(r"^Netlist_(.+?)-schematic", stem)
     if m:
-        return m.group(1)
+        return _BOARD_ALIASES.get(m.group(1).lower(), m.group(1))
     m = re.match(r"^Netlist_(.+?)_\d{4}-\d{2}-\d{2}", stem)
     if m:
-        return m.group(1)
+        return _BOARD_ALIASES.get(m.group(1).lower(), m.group(1))
     return stem
 
 

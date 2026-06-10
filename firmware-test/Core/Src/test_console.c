@@ -1,7 +1,14 @@
-/* USB-CDC test console for Tachyon IO bring-up.
- * Command set and bench procedures are documented in test-firmware.md.
- * One verb per IO function: the host commands a known output (scope
- * measures) or applies a stimulus (console reports what the MCU saw). */
+/* Tachyon IO bring-up test firmware.
+ *
+ * Two interfaces share the same low-level IO helpers:
+ *   1. On-device MENU UI (OLED + encoder + pot) — the primary control surface.
+ *      The encoder navigates a list of IO functions; a short-press enters an
+ *      item, a long-press returns to the menu; the pot sets the selected
+ *      item's live parameter (CV-out voltage, tone frequency, gate clock BPM).
+ *   2. USB-CDC command console — retained in parallel for scripted/automated
+ *      bench testing (bench/serial_cli.py). See test-firmware.md for the verbs.
+ *
+ * The menu owns the OLED; serial commands still drive IO and log to USB. */
 
 #include "test_console.h"
 #include "main.h"
@@ -52,6 +59,7 @@ void console_rx_byte(uint8_t b)
 #define DMA_FRAMES  256
 #define TONE_AMP    0x30000000  /* ~0.375 full-scale, headroom against clipping */
 #define TWO_PI      6.283185307179586f
+#define F_TIM2      84000000.0f /* TIM2 = APB1x2 = 84 MHz (clock-in capture) */
 
 static struct {
   uint8_t  active;                 /* 1 = emit sine, 0 = emit digital silence */
@@ -74,8 +82,6 @@ static struct {
 
 static uint8_t  adc_stream;
 static uint32_t adc_stream_t;
-static int32_t  enc_count;
-static uint32_t tick_1ms_prev;
 
 /* ---- low-level IO helpers ---- */
 
@@ -90,14 +96,20 @@ static void gate_set(int ch, int jack_high)
   gate_job[ch].level = (uint8_t)(jack_high ? 1 : 0);
 }
 
-/* DAC8552 24-bit frame (DAC8552.md): [23:22]=0, [21]=channel(0=A,1=B),
- * [20]=load, [19:18]=power-down(00), [17:16]=0, [15:0]=data.
+/* DAC8552 24-bit frame control byte (ref: github.com/adn05/dac8552):
+ *   UPDATE_DAC_A=0x10 (DB20, load A), UPDATE_DAC_B=0x20 (DB21, load B),
+ *   BUFFER_A=0x00 / BUFFER_B=0x04 (DB18, data-buffer select), MODE_NORMAL=0x00.
+ * "Write buffer + update output" = UPDATE_DAC_x | BUFFER_x:
+ *   ch A = 0x10 | 0x00 = 0x10,  ch B = 0x20 | 0x04 = 0x24.
+ * The channel is selected by the BUFFER bit (DB18), NOT DB21.
+ * (Bench-confirmed 2026-06-10: the old code set DB21 as if it were the channel
+ *  bit but left BUFFER at A, so every write landed in DAC A / VOUTA and VOUTB
+ *  was never driven -- looked like a dead DAC channel but was this bug.)
  * Physical CV-OUT-A is wired to DAC channel B and vice-versa
- * (cv-output-dac.md channel swap), so jack 0 -> chbit 1. */
+ * (cv-output-dac.md channel swap), so jack 0 (A) -> DAC ch B -> 0x24. */
 static void dac_write(int jack, uint16_t code)
 {
-  uint8_t chbit = (jack == 0) ? 1u : 0u;
-  uint8_t ctrl  = (uint8_t)((chbit << 5) | (1u << 4)); /* load, normal PD */
+  uint8_t ctrl  = (jack == 0) ? 0x24u : 0x10u; /* jack A->ch B, jack B->ch A */
   uint8_t tx[3] = { ctrl, (uint8_t)(code >> 8), (uint8_t)(code & 0xFF) };
 
   HAL_GPIO_WritePin(DAC_SPI_CS_GPIO_Port, DAC_SPI_CS_Pin, GPIO_PIN_RESET);
@@ -167,22 +179,14 @@ static void tone_stream_start(void)
   HAL_I2S_Transmit_DMA(&hi2s3, tone.buf, DMA_FRAMES * 2);
 }
 
-/* ---- OLED status display ----
- * The screen mirrors what the bench is doing: a title bar names the IO under
- * test (e.g. "H3 CV-OUT A") and up to 4 body lines carry the live values.
- * Commands set the text; the full-frame blit is rate-limited and only runs
- * when something changed, so it never stalls the I2S/SPI tests. */
+/* Set the tone frequency (Hz) by deriving the per-sample phase increment. */
+static void tone_set_hz(uint16_t hz)
+{
+  tone.inc = TWO_PI * (float)hz / I2S_FS;
+}
+
+/* ---- OLED framebuffer (owned by the menu UI; see menu section below) ---- */
 static UBYTE oled_image[128 * 128 / 2];
-
-#define DISP_BODY_ROWS 4
-#define DISP_COLS      20            /* ~21 Font12 glyphs across 128 px */
-
-static struct {
-  char     title[DISP_COLS];
-  char     body[DISP_BODY_ROWS][DISP_COLS];
-  uint8_t  dirty;
-  uint32_t t_last;
-} disp;
 
 static void oled_setup(void)
 {
@@ -194,48 +198,6 @@ static void oled_setup(void)
   Paint_SelectImage(oled_image);
 }
 
-/* Set the title bar and clear all body lines (each command starts fresh). */
-static void disp_title(const char *fmt, ...)
-{
-  va_list ap; va_start(ap, fmt);
-  vsnprintf(disp.title, sizeof(disp.title), fmt, ap);
-  va_end(ap);
-  for (int i = 0; i < DISP_BODY_ROWS; i++) disp.body[i][0] = '\0';
-  disp.dirty = 1;
-}
-
-static void disp_line(int row, const char *fmt, ...)
-{
-  if (row < 0 || row >= DISP_BODY_ROWS) return;
-  va_list ap; va_start(ap, fmt);
-  vsnprintf(disp.body[row], sizeof(disp.body[row]), fmt, ap);
-  va_end(ap);
-  disp.dirty = 1;
-}
-
-static void disp_render(void)
-{
-  Paint_Clear(BLACK);
-  Paint_DrawRectangle(0, 0, 127, 15, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-  Paint_DrawString_EN(2, 2, disp.title, &Font12, WHITE, BLACK); /* black on bar */
-  for (int i = 0; i < DISP_BODY_ROWS; i++) {
-    if (disp.body[i][0]) {
-      Paint_DrawString_EN(2, 22 + i * 16, disp.body[i], &Font12, BLACK, WHITE);
-    }
-  }
-  OLED_1in5_Display(oled_image);
-}
-
-/* Redraw at most ~8 Hz, only when a command/job changed the contents. */
-static void disp_service(uint32_t now)
-{
-  if (disp.dirty && (now - disp.t_last) >= 120) {
-    disp.dirty = 0;
-    disp.t_last = now;
-    disp_render();
-  }
-}
-
 static void oled_test_pattern(void)
 {
   Paint_Clear(BLACK);
@@ -244,7 +206,6 @@ static void oled_test_pattern(void)
   Paint_DrawLine(127, 0, 0, 127, WHITE, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
   Paint_DrawString_EN(18, 56, "TACHYON TEST", &Font12, BLACK, WHITE);
   OLED_1in5_Display(oled_image);
-  disp.t_last = HAL_GetTick();   /* don't let a status redraw stomp it instantly */
 }
 
 /* ---- clock input capture (PA2 / TIM2_CH3), polled, no IRQ ---- */
@@ -258,37 +219,30 @@ static int wait_capture(uint32_t timeout_ms, uint32_t *cap)
   return 1;
 }
 
+/* Blocking one-shot measurement used by the serial `clk` command. */
 static void cmd_clk(void)
 {
   uint32_t t1, t2;
   __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_CC3);
-  disp_title("H9 CLK-IN");
-  disp_line(0, "measuring...");
   if (!wait_capture(2000, &t1) || !wait_capture(2000, &t2)) {
     printf("clk: no edges (timeout) — patch a clock into CLK-IN\r\n");
-    disp_line(0, "no edges");
-    disp_line(1, "patch a clock");
     return;
   }
   uint32_t ticks = t2 - t1;                 /* 32-bit timer, wrap-safe */
-  float f_timer = 84000000.0f;              /* TIM2 = APB1x2 = 84 MHz */
-  float period_us = (float)ticks / f_timer * 1e6f;
-  float freq = f_timer / (float)ticks;
-  float bpm1 = freq * 60.0f;                /* BPM at 1 PPQN */
+  float period_us = (float)ticks / F_TIM2 * 1e6f;
+  float freq = F_TIM2 / (float)ticks;
   printf("clk: period=%.1f us  freq=%.3f Hz  bpm@1ppqn=%.2f\r\n",
-         period_us, freq, bpm1);
-  disp_line(0, "f = %.2f Hz", freq);
-  disp_line(1, "T = %.1f us", period_us);
-  disp_line(2, "bpm@1 = %.1f", bpm1);
+         period_us, freq, freq * 60.0f);
 }
 
-/* ---- command dispatch ---- */
+/* ===================== USB-CDC command console ===================== */
+
 static int streq(const char *a, const char *b) { return strcmp(a, b) == 0; }
 
 static void cmd_help(void)
 {
   printf(
-    "commands:\r\n"
+    "commands (encoder+pot menu also active on the OLED):\r\n"
     "  id                      firmware id\r\n"
     "  led on|off|blink        PB2 user LED\r\n"
     "  dac a|b <code>          raw 16-bit DAC (0-65535)\r\n"
@@ -297,10 +251,8 @@ static void cmd_help(void)
     "  gate a|b pulse <ms>     one-shot pulse\r\n"
     "  gate a|b clk <bpm> <ppqn>  free-run clock source\r\n"
     "  adc a|b                 read CV-IN code + volts\r\n"
-    "  pot                     read USR_POT_1\r\n"
     "  stream on|off           continuous ADC dump\r\n"
     "  clk                     measure CLK-IN period/BPM\r\n"
-    "  enc                     encoder count\r\n"
     "  tone <hz>               play sine (0 = stop)\r\n"
     "  mute 0|1                XSMT: 0=unmute 1=mute\r\n"
     "  oled test               draw OLED test pattern\r\n"
@@ -324,8 +276,6 @@ static void dispatch(char *line)
     else if (streq(argv[1], "off")) { led_blink.active = 0; HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_RESET); }
     else if (streq(argv[1], "blink")) { led_blink.active = 1; led_blink.t_off = HAL_GetTick() + 200; }
     printf("led %s\r\n", argv[1]);
-    disp_title("USER LED");
-    disp_line(0, "PB2 = %s", argv[1]);
   } else if (streq(argv[0], "dac") && argc >= 3) {
     int jack = streq(argv[1], "b") ? 1 : 0;
     uint16_t code;
@@ -342,18 +292,13 @@ static void dispatch(char *line)
     }
     dac_write(jack, code);
     printf("dac %s code=%u\r\n", jack ? "b" : "a", code);
-    disp_title("H3 CV-OUT %s", jack ? "B" : "A");
-    disp_line(0, "code = %u", code);
-    disp_line(1, "= %.2f V", (float)code * 10.0f / 65535.0f);
   } else if (streq(argv[0], "gate") && argc >= 3) {
     int ch = streq(argv[1], "b") ? 1 : 0;
-    disp_title("H9 GATE-OUT %s", ch ? "B" : "A");
     if (streq(argv[2], "pulse") && argc >= 4) {
       gate_set(ch, 1);
       gate_job[ch].mode = 1;
       gate_job[ch].t_next = HAL_GetTick() + (uint32_t)strtol(argv[3], NULL, 0);
       printf("gate %s pulse\r\n", argv[1]);
-      disp_line(0, "pulse %ld ms", strtol(argv[3], NULL, 0));
     } else if (streq(argv[2], "clk") && argc >= 5) {
       long bpm = strtol(argv[3], NULL, 0);
       long ppqn = strtol(argv[4], NULL, 0);
@@ -366,71 +311,349 @@ static void dispatch(char *line)
       gate_set(ch, 1);
       printf("gate %s clk %ld bpm %ld ppqn (half=%lu ms)\r\n",
              argv[1], bpm, ppqn, (unsigned long)gate_job[ch].half_ms);
-      disp_line(0, "clk %ld bpm", bpm);
-      disp_line(1, "%ld ppqn", ppqn);
     } else {
       gate_job[ch].mode = 0;
       gate_set(ch, strtol(argv[2], NULL, 0) ? 1 : 0);
       printf("gate %s %d\r\n", argv[1], gate_job[ch].level);
-      disp_line(0, "jack = %s", gate_job[ch].level ? "HIGH" : "LOW");
     }
   } else if (streq(argv[0], "adc") && argc >= 2) {
     uint16_t v[3]; adc_read_all(v);
     int idx = streq(argv[1], "b") ? 1 : 0;
     printf("adc %s code=%u volts=%.3f\r\n", idx ? "b" : "a", v[idx], cv_in_volts(v[idx]));
-    disp_title("H9 CV-IN %s", idx ? "B" : "A");
-    disp_line(0, "code = %u", v[idx]);
-    disp_line(1, "= %.3f V", cv_in_volts(v[idx]));
-  } else if (streq(argv[0], "pot")) {
-    uint16_t v[3]; adc_read_all(v);
-    printf("pot code=%u\r\n", v[2]);
-    disp_title("H9 USR-POT");
-    disp_line(0, "code = %u", v[2]);
-    disp_line(1, "= %u %%", (unsigned)(v[2] * 100u / 4095u));
   } else if (streq(argv[0], "stream") && argc >= 2) {
     adc_stream = streq(argv[1], "on");
     adc_stream_t = HAL_GetTick();
     printf("stream %s\r\n", adc_stream ? "on" : "off");
-    if (adc_stream) disp_title("H9 CV-IN/POT");
-    else            disp_title("stream off");
   } else if (streq(argv[0], "clk")) {
     cmd_clk();
-  } else if (streq(argv[0], "enc")) {
-    printf("enc count=%ld\r\n", (long)enc_count);
-    disp_title("H4 USR-ENC");
-    disp_line(0, "count = %ld", (long)enc_count);
   } else if (streq(argv[0], "tone") && argc >= 2) {
     long hz = strtol(argv[1], NULL, 0);
-    if (hz <= 0) { tone.active = 0; printf("tone off\r\n"); disp_title("H2 A-OUT"); disp_line(0, "tone off"); }
-    else { tone.inc = TWO_PI * (float)hz / I2S_FS; tone.active = 1; printf("tone %ld Hz\r\n", hz);
-           disp_title("H2 A-OUT L/R"); disp_line(0, "tone %ld Hz", hz); }
+    if (hz <= 0) { tone.active = 0; printf("tone off\r\n"); }
+    else { tone_set_hz((uint16_t)hz); tone.active = 1; printf("tone %ld Hz\r\n", hz); }
   } else if (streq(argv[0], "mute") && argc >= 2) {
     int muted = strtol(argv[1], NULL, 0) ? 1 : 0;
     HAL_GPIO_WritePin(MUTE_N_GPIO_Port, MUTE_N_Pin, muted ? GPIO_PIN_RESET : GPIO_PIN_SET);
     printf("mute %d (%s)\r\n", muted, muted ? "muted" : "unmuted");
-    disp_title("DAC MUTE");
-    disp_line(0, "%s", muted ? "MUTED" : "UNMUTED");
   } else if (streq(argv[0], "oled") && argc >= 2 && streq(argv[1], "test")) {
     oled_test_pattern();
-    printf("oled test pattern drawn\r\n");
+    printf("oled test pattern drawn (menu redraws on next nav)\r\n");
   } else if (streq(argv[0], "sd")) {
     int cd = (HAL_GPIO_ReadPin(SD_CD_GPIO_Port, SD_CD_Pin) == GPIO_PIN_SET);
     printf("sd card-detect=%s\r\n", cd ? "present" : "empty");
-    disp_title("SD CARD");
-    disp_line(0, "detect = %s", cd ? "present" : "empty");
     if (cd) {
       uint8_t blk[512];
       if (HAL_SD_ReadBlocks(&hsd, blk, 0, 1, 200) == HAL_OK) {
         printf("sd block0: %02X %02X %02X %02X ... (state=%lu)\r\n",
                blk[0], blk[1], blk[2], blk[3], (unsigned long)HAL_SD_GetCardState(&hsd));
-        disp_line(1, "blk0 %02X %02X %02X", blk[0], blk[1], blk[2]);
       } else {
         printf("sd read failed — if card was inserted after boot, reset the board\r\n");
-        disp_line(1, "read failed");
       }
     }
   } else {
     printf("unknown: %s (try 'help')\r\n", argv[0]);
+  }
+}
+
+/* ===================== On-device menu UI ===================== */
+/* Encoder navigates; short-press enters an item / does its action; long-press
+ * returns to the menu. The pot sets the selected item's live parameter. The
+ * menu is the sole OLED renderer — serial commands drive the same hardware but
+ * the menu shows its own last-commanded value (no DAC readback). */
+
+/* Non-blocking CLK-IN monitor: polled every loop while the Clock In item is
+ * open. Shares TIM2_CH3 with the serial `clk` command, but only one is in use
+ * at a time in practice (human at the OLED vs. host script). */
+static struct {
+  uint32_t last_cap;
+  uint8_t  have_last;
+  uint32_t period_ticks;   /* last good inter-edge period, 0 = no clock */
+  uint32_t t_last_edge;    /* HAL tick of last edge, for staleness timeout */
+} clkmon;
+
+static void clk_monitor_poll(uint32_t now)
+{
+  if (__HAL_TIM_GET_FLAG(&htim2, TIM_FLAG_CC3)) {
+    uint32_t cap = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_3); /* clears flag */
+    if (clkmon.have_last) {
+      uint32_t d = cap - clkmon.last_cap;
+      if (d) clkmon.period_ticks = d;
+    }
+    clkmon.last_cap = cap;
+    clkmon.have_last = 1;
+    clkmon.t_last_edge = now;
+  } else if (clkmon.period_ticks && (now - clkmon.t_last_edge) > 1500) {
+    clkmon.period_ticks = 0;   /* stale: declare no clock */
+    clkmon.have_last = 0;
+  }
+}
+
+typedef enum {
+  IT_GATE_A, IT_GATE_B, IT_CVOUT_A, IT_CVOUT_B,
+  IT_AUDIO, IT_ANALOG_IN, IT_CLOCK_IN, IT_COUNT
+} menu_item_t;
+
+typedef enum { UI_MENU, UI_ITEM } ui_state_t;
+
+static const char *const menu_names[IT_COUNT] = {
+  "Gate A", "Gate B", "CV-out A", "CV-out B", "Audio", "Analog In", "Clock In",
+};
+
+static struct {
+  ui_state_t  state;
+  int         cursor;        /* highlighted row in the menu */
+  menu_item_t item;          /* active item in UI_ITEM */
+  uint8_t     redraw;        /* pending render request */
+  uint32_t    t_render;      /* last render tick */
+  uint16_t    pot_raw;       /* last pot ADC code */
+  uint16_t    cv_in[2];      /* last CV-IN A/B ADC codes (Analog In screen) */
+  uint16_t    cv_mv[2];      /* commanded CV-out A/B (mV) */
+  uint8_t     gate_disp[2];  /* 0 = LOW, 1 = HIGH, 2 = CLK */
+  uint16_t    gate_bpm[2];   /* clock rate in CLK state */
+  uint16_t    tone_hz;       /* commanded tone frequency */
+  uint8_t     muted;         /* XSMT state shown on the Audio screen */
+} ui;
+
+/* Drive the gate hardware from the item's display state. */
+static void apply_gate_state(int ch)
+{
+  if (ui.gate_disp[ch] == 0) {        /* LOW */
+    gate_job[ch].mode = 0;
+    gate_set(ch, 0);
+  } else if (ui.gate_disp[ch] == 1) { /* HIGH */
+    gate_job[ch].mode = 0;
+    gate_set(ch, 1);
+  } else {                            /* CLK */
+    uint16_t bpm = ui.gate_bpm[ch] ? ui.gate_bpm[ch] : 120;
+    uint32_t period_ms = 60000UL / bpm;
+    gate_job[ch].half_ms = period_ms / 2 ? period_ms / 2 : 1;
+    gate_job[ch].mode = 2;
+    gate_job[ch].t_next = HAL_GetTick() + gate_job[ch].half_ms;
+    gate_set(ch, 1);
+  }
+}
+
+static void menu_enter_item(void)
+{
+  switch (ui.item) {
+    case IT_AUDIO:
+      tone_set_hz(ui.tone_hz);
+      tone.active = 1;
+      break;
+    case IT_CLOCK_IN:
+      clkmon.have_last = 0;
+      clkmon.period_ticks = 0;
+      clkmon.t_last_edge = HAL_GetTick();
+      __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_CC3);
+      break;
+    default:
+      break;
+  }
+}
+
+static void menu_exit_item(void)
+{
+  if (ui.item == IT_AUDIO) tone.active = 0;   /* silence on leaving Audio */
+}
+
+/* Short-press action inside an item. */
+static void menu_item_action(void)
+{
+  switch (ui.item) {
+    case IT_GATE_A:
+    case IT_GATE_B: {
+      int ch = (ui.item == IT_GATE_B) ? 1 : 0;
+      ui.gate_disp[ch] = (uint8_t)((ui.gate_disp[ch] + 1) % 3); /* LOW->HIGH->CLK */
+      apply_gate_state(ch);
+      break;
+    }
+    case IT_AUDIO:
+      ui.muted ^= 1u;
+      HAL_GPIO_WritePin(MUTE_N_GPIO_Port, MUTE_N_Pin,
+                        ui.muted ? GPIO_PIN_RESET : GPIO_PIN_SET);
+      break;
+    default:
+      break;   /* CV-out / monitors: nothing on short-press */
+  }
+}
+
+/* Map the pot to the active item's parameter (linear, with a small deadband so
+ * pot noise doesn't jitter the output/display). Also refreshes the cached
+ * CV-IN / pot codes used by the Analog In screen. */
+static void menu_apply_pot(void)
+{
+  uint16_t v[3]; adc_read_all(v);
+  ui.cv_in[0] = v[0];
+  ui.cv_in[1] = v[1];
+  ui.pot_raw  = v[2];
+  uint32_t pot = v[2];
+
+  switch (ui.item) {
+    case IT_CVOUT_A:
+    case IT_CVOUT_B: {
+      int ch = (ui.item == IT_CVOUT_B) ? 1 : 0;
+      uint16_t mv = (uint16_t)(pot * 10000UL / 4095UL);
+      if (abs((int)mv - (int)ui.cv_mv[ch]) >= 25) {        /* ~10 ADC codes */
+        ui.cv_mv[ch] = mv;
+        dac_write(ch, (uint16_t)((uint32_t)mv * 65535UL / 10000UL));
+        ui.redraw = 1;
+      }
+      break;
+    }
+    case IT_AUDIO: {
+      uint16_t hz = (uint16_t)(20UL + pot * (5000UL - 20UL) / 4095UL);
+      if (abs((int)hz - (int)ui.tone_hz) >= 5) {
+        ui.tone_hz = hz;
+        tone_set_hz(hz);
+        ui.redraw = 1;
+      }
+      break;
+    }
+    case IT_GATE_A:
+    case IT_GATE_B: {
+      int ch = (ui.item == IT_GATE_B) ? 1 : 0;
+      if (ui.gate_disp[ch] == 2) {                          /* only in CLK */
+        uint16_t bpm = (uint16_t)(30UL + pot * (960UL - 30UL) / 4095UL);
+        if (bpm != ui.gate_bpm[ch]) {
+          ui.gate_bpm[ch] = bpm;
+          uint32_t period_ms = 60000UL / (bpm ? bpm : 1);
+          gate_job[ch].half_ms = period_ms / 2 ? period_ms / 2 : 1;
+          ui.redraw = 1;
+        }
+      }
+      break;
+    }
+    default:
+      break;   /* monitors: pot unused */
+  }
+}
+
+/* ---- rendering ---- */
+
+/* One body text line, white-on-black, Font12, rows 0..5 (y = 20 + row*15). */
+static void item_line(int row, const char *s)
+{
+  Paint_DrawString_EN(4, 20 + row * 15, s, &Font12, WHITE, BLACK);
+}
+
+static void menu_render_menu(void)
+{
+  Paint_Clear(BLACK);
+  Paint_DrawRectangle(0, 0, 127, 14, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+  Paint_DrawString_EN(4, 1, "TACHYON IO TEST", &Font12, BLACK, WHITE);
+
+  for (int i = 0; i < IT_COUNT; i++) {
+    int y = 18 + i * 15;
+    if (i == ui.cursor) {   /* highlight bar: black text on a filled white row */
+      Paint_DrawRectangle(0, y - 1, 127, y + 12, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+      Paint_DrawString_EN(4, y, menu_names[i], &Font12, BLACK, WHITE);
+    } else {
+      Paint_DrawString_EN(4, y, menu_names[i], &Font12, WHITE, BLACK);
+    }
+  }
+}
+
+static void menu_render_item(void)
+{
+  char b[24];
+  Paint_Clear(BLACK);
+  Paint_DrawRectangle(0, 0, 127, 14, WHITE, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+  Paint_DrawString_EN(4, 1, menu_names[ui.item], &Font12, BLACK, WHITE);
+
+  switch (ui.item) {
+    case IT_GATE_A:
+    case IT_GATE_B: {
+      int ch = (ui.item == IT_GATE_B) ? 1 : 0;
+      const char *st = ui.gate_disp[ch] == 0 ? "LOW" :
+                       (ui.gate_disp[ch] == 1 ? "HIGH" : "CLK");
+      snprintf(b, sizeof b, "state: %s", st);  item_line(0, b);
+      if (ui.gate_disp[ch] == 2) {
+        snprintf(b, sizeof b, "rate: %u BPM", ui.gate_bpm[ch]); item_line(1, b);
+        item_line(2, "pot sets rate");
+      }
+      item_line(4, "click: cycle");
+      break;
+    }
+    case IT_CVOUT_A:
+    case IT_CVOUT_B: {
+      int ch = (ui.item == IT_CVOUT_B) ? 1 : 0;
+      snprintf(b, sizeof b, "%u mV", ui.cv_mv[ch]);            item_line(0, b);
+      snprintf(b, sizeof b, "= %.2f V", (float)ui.cv_mv[ch] / 1000.0f); item_line(1, b);
+      item_line(3, "pot sets level");
+      break;
+    }
+    case IT_AUDIO:
+      snprintf(b, sizeof b, "tone: %u Hz", ui.tone_hz);        item_line(0, b);
+      snprintf(b, sizeof b, "audio: %s", ui.muted ? "MUTED" : "ON"); item_line(1, b);
+      item_line(3, "click = mute");
+      break;
+    case IT_ANALOG_IN:
+      snprintf(b, sizeof b, "CV-A: %.2f V", cv_in_volts(ui.cv_in[0])); item_line(0, b);
+      snprintf(b, sizeof b, "CV-B: %.2f V", cv_in_volts(ui.cv_in[1])); item_line(1, b);
+      snprintf(b, sizeof b, "pot:  %u", ui.pot_raw);           item_line(2, b);
+      break;
+    case IT_CLOCK_IN:
+      if (clkmon.period_ticks) {
+        float freq = F_TIM2 / (float)clkmon.period_ticks;
+        snprintf(b, sizeof b, "%.2f Hz", freq);                item_line(0, b);
+        snprintf(b, sizeof b, "%.1f BPM", freq * 60.0f);       item_line(1, b);
+      } else {
+        item_line(0, "no clock");
+        item_line(1, "patch H9.8");
+      }
+      break;
+    default:
+      break;
+  }
+
+  Paint_DrawString_EN(4, 113, "hold = back", &Font12, WHITE, BLACK);
+}
+
+static void menu_render(void)
+{
+  if (ui.state == UI_MENU) menu_render_menu();
+  else                     menu_render_item();
+  OLED_1in5_Display(oled_image);
+}
+
+static void menu_poll(uint32_t now)
+{
+  int32_t d = encoder_get_delta();
+  encoder_btn_event_t ev = encoder_get_button_event();
+
+  if (ui.state == UI_MENU) {
+    if (d) {
+      int c = ui.cursor + (int)d;
+      if (c < 0) c = 0;
+      if (c >= IT_COUNT) c = IT_COUNT - 1;
+      if (c != ui.cursor) { ui.cursor = c; ui.redraw = 1; }
+    }
+    if (ev == ENC_BTN_SHORT_PRESS) {
+      ui.item  = (menu_item_t)ui.cursor;
+      ui.state = UI_ITEM;
+      menu_enter_item();
+      ui.redraw = 1;
+    }
+    /* long-press in the menu: ignored */
+  } else { /* UI_ITEM */
+    if (ev == ENC_BTN_LONG_PRESS) {
+      menu_exit_item();
+      ui.state  = UI_MENU;
+      ui.redraw = 1;
+    } else if (ev == ENC_BTN_SHORT_PRESS) {
+      menu_item_action();
+      ui.redraw = 1;
+    }
+    if (ui.item == IT_CLOCK_IN) clk_monitor_poll(now);
+  }
+
+  /* periodic: apply the pot and repaint (monitors refresh continuously) */
+  if ((now - ui.t_render) >= 33) {
+    ui.t_render = now;
+    if (ui.state == UI_ITEM) {
+      menu_apply_pot();
+      if (ui.item == IT_ANALOG_IN || ui.item == IT_CLOCK_IN) ui.redraw = 1;
+    }
+    if (ui.redraw) { ui.redraw = 0; menu_render(); }
   }
 }
 
@@ -449,7 +672,7 @@ void console_init(void)
   gate_set(0, 0);
   gate_set(1, 0);
 
-  /* CLK-IN capture (polled in cmd_clk). */
+  /* CLK-IN capture (polled in cmd_clk / clk_monitor_poll). */
   HAL_TIM_IC_Start(&htim2, TIM_CHANNEL_3);
 
   encoder_init();
@@ -460,19 +683,20 @@ void console_init(void)
   dac_write(1, 0);
   HAL_GPIO_WritePin(MUTE_N_GPIO_Port, MUTE_N_Pin, GPIO_PIN_RESET); /* start muted */
 
-  /* Start the continuous I2S stream now (silence until `tone` is issued). The
+  /* Start the continuous I2S stream now (silence until a tone is set). The
    * PCM5102A needs uninterrupted BCK/LRCK to stay out of soft-mute. */
   tone_stream_start();
 
-  tick_1ms_prev = HAL_GetTick();
+  /* Menu UI defaults. */
+  ui.state    = UI_MENU;
+  ui.cursor   = 0;
+  ui.tone_hz  = 440;
+  ui.gate_bpm[0] = ui.gate_bpm[1] = 120;
+  ui.muted    = 1;                 /* matches the muted start above */
+  ui.t_render = HAL_GetTick();
+  menu_render();
 
-  disp_title("TACHYON TEST");
-  disp_line(0, "console ready");
-  disp_line(1, "USB-CDC up");
-  disp_render();
-  disp.t_last = HAL_GetTick();
-
-  printf("\r\n=== Tachyon IO test console ===\r\n");
+  printf("\r\n=== Tachyon IO test (menu UI + serial console) ===\r\n");
   cmd_help();
   printf("> ");
 }
@@ -481,17 +705,7 @@ static void service_jobs(void)
 {
   uint32_t now = HAL_GetTick();
 
-  /* 1 ms encoder timing + count accumulation */
-  if (now != tick_1ms_prev) {
-    while (tick_1ms_prev != now) { encoder_tick_1ms(); tick_1ms_prev++; }
-    int32_t d = encoder_get_delta();
-    if (d) { enc_count += d; disp_title("H4 USR-ENC"); disp_line(0, "count = %ld", (long)enc_count); }
-    encoder_btn_event_t ev = encoder_get_button_event();
-    if (ev == ENC_BTN_SHORT_PRESS) { printf("enc: SHORT press\r\n"); disp_line(1, "SW: SHORT"); }
-    else if (ev == ENC_BTN_LONG_PRESS) { printf("enc: LONG press\r\n"); disp_line(1, "SW: LONG"); }
-  }
-
-  /* gate background jobs */
+  /* gate background jobs (one-shot pulse + free-run clock) */
   for (int ch = 0; ch < 2; ch++) {
     if (gate_job[ch].mode == 1 && (int32_t)(now - gate_job[ch].t_next) >= 0) {
       gate_set(ch, 0);
@@ -499,7 +713,6 @@ static void service_jobs(void)
     } else if (gate_job[ch].mode == 2 && (int32_t)(now - gate_job[ch].t_next) >= 0) {
       gate_set(ch, gate_job[ch].level ? 0 : 1);
       gate_job[ch].t_next = now + gate_job[ch].half_ms;
-      disp_line(2, "jack = %s", gate_job[ch].level ? "HIGH" : "LOW");
     }
   }
 
@@ -509,21 +722,16 @@ static void service_jobs(void)
     led_blink.t_off = now + 200;
   }
 
-  /* ADC stream ~10 Hz */
+  /* ADC stream ~10 Hz (serial `stream on`) */
   if (adc_stream && (now - adc_stream_t) >= 100) {
     adc_stream_t = now;
     uint16_t v[3]; adc_read_all(v);
     printf("stream a=%u(%.3fV) b=%u(%.3fV) pot=%u\r\n",
            v[0], cv_in_volts(v[0]), v[1], cv_in_volts(v[1]), v[2]);
-    disp_line(0, "A %.2fV B %.2fV", cv_in_volts(v[0]), cv_in_volts(v[1]));
-    disp_line(1, "pot = %u", v[2]);
   }
 
   /* tone playback runs entirely off the circular I2S DMA (started in
-   * console_init); the half/complete callbacks refill the buffer, so there is
-   * nothing to service here. */
-
-  disp_service(now);
+   * console_init); the half/complete callbacks refill the buffer. */
 }
 
 void console_poll(void)
@@ -548,4 +756,5 @@ void console_poll(void)
   }
 
   service_jobs();
+  menu_poll(HAL_GetTick());
 }

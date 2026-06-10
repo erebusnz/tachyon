@@ -65,7 +65,7 @@ Notes:
 | PCM5102A CPVDD | +3V3_AUDIO | 4.5 mA | 6 mA | Charge pump |
 | **Subtotal +3V3_AUDIO** | | **~22 mA** | **~26 mA** | TPS7A2033 #2 |
 | DAC8552 | +3V3_PREC | 0.5 mA | 1 mA | 2 × 155 µA quiescent + SPI switching |
-| REF5025 | +3V3_PREC | 1 mA | 1.5 mA | Precision Vref; 0.6 V over VS_min = 2.7 V (datasheet §6.5). Moved onto `+3V3_PREC` so U2 can sit next to U6 and keep the `VREF_2V5` trace < 20 mm |
+| REF5025 | +3V3_PREC | 1 mA | 1.5 mA | Precision Vref; 0.6 V over VS_min = 2.7 V (datasheet §6.5). Moved onto `+3V3_PREC` so U2 can sit next to U6 and keep the `VREF` trace < 20 mm |
 | **Subtotal +3V3_PREC** | | **~1.5 mA** | **~2.5 mA** | TPS7A2033 #1 — still very lightly loaded (< 1 % of 300 mA capability) |
 | TPS7A2033 ×2 quiescent | +5V | 0.05 mA | -- | Negligible |
 | **Total +5V load** | | **~134 mA** | **~224 mA** | Buck must supply this (STM32 + OLED + PCM5102A + U14/U15 in) |
@@ -216,7 +216,7 @@ Two **identical** TPS7A2033PDBVR low-noise LDOs hang off the +5 V rail.
 
 **U14 → `+3V3_PREC`** feeds: **DAC8552 VDD and REF5025 VIN.** The
 REF5025 was moved from `+5V` onto this LDO rail so U2 could be placed
-directly adjacent to U6, keeping the `VREF_2V5` trace under the 20 mm
+directly adjacent to U6, keeping the `VREF` trace under the 20 mm
 spec limit in `cv-output-dac.md` §6. `+3V3_PREC` at 3.3 V sits 0.6 V
 above the REF5025's VS_min = 2.7 V hard floor (datasheet §6.5) — within
 spec, and the TPS7A2033 is still < 1 % loaded (~2.5 mA peak against its

@@ -125,7 +125,8 @@ The console exposes one verb per IO function. Sketch of the command set:
 | `adc <a\|b>` | read CV-IN ADC code + volts | PA0 / PA1 |
 | `pot` | read USR_POT_1 ADC code | PC0 |
 | `clk` | report captured CLK-IN period / BPM | PA2 (TIM2_CH3 capture) |
-| `enc` | report encoder count + last SW edge | PB6 / PB7 / PB4 |
+| `enc` | report count, turn direction, live A/B/SW level + last SW edge | PB6 / PB7 / PB4 |
+| `enc reset` | zero the encoder count | PB6 / PB7 |
 | `tone <hz>` | play sine over I2S3 | PB3/PB5/PA15 → audio L/R |
 | `mute <0\|1>` | drive XSMT | PC6 |
 | `oled test` | draw test pattern (also drives SPI1) | PA5/PA7/PB12/PC1/PC2 |
@@ -311,8 +312,11 @@ clipped to that header pin, taking `voltage_range_mv`.
 ### 7. Encoder, USB (and SD)
 - **Encoder (inject at header):** the encoder (SW1) is on the IO board, so
   pulse **H4.2/H4.3** with quadrature edges from the BP and confirm `enc`
-  count moves; lead/lag of A vs B sets the sign. Pull **H4.5** to GND for the
-  SW press/`enc` SW edge.
+  count moves; lead/lag of A vs B sets the sign (`dir=CW/CCW`). `enc` also
+  prints the live A/B/SW pin levels — handy for confirming the BP is actually
+  toggling the right header pin before chasing a count that won't move.
+  `enc reset` zeroes the count for a clean baseline between sweeps. Pull
+  **H4.5** to GND for the SW press; `enc` reports it as `last_sw=SHORT/LONG`.
 - **USB:** if the console enumerates on COM13 and round-trips commands,
   PA11/PA12 are proven by definition.
 - **SD:** backing-board-internal (card slot on the backing board) — `sd`

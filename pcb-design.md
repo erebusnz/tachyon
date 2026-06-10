@@ -260,7 +260,7 @@ the two in sync.
 | `U12 ↔ U3` (buck ↔ audio DAC)    | ≥ 30 mm   | Switch-node loop must be far from the audio DAC to avoid radiative coupling. |
 | `U12 ↔ U2` (buck ↔ ref)          | ≥ 30 mm   | Switch-node loop must be far from the precision Vref. |
 | `U12 ↔ U16` (buck ↔ audio op-amp)| ≥ 30 mm   | Audio output buffers are as sensitive as the DAC; same rule applies. |
-| `U2 ↔ U6` (REF5025 ↔ DAC8552)    | ≤ 20 mm   | `VREF_2V5` analog trace must be short (`cv-output-dac.md` §6). |
+| `U2 ↔ U6` (REF5025 ↔ DAC8552)    | ≤ 20 mm   | `VREF` analog trace must be short (`cv-output-dac.md` §6). |
 
 Adjacency / orientation rules that don't reduce to a single distance:
 
