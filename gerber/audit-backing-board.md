@@ -4,7 +4,7 @@
 
 ## Sources
 
-- Telesis netlist: indexed (31 package types, 58 nets)
+- Telesis netlist: indexed (31 package types, 59 nets)
 - Pick-and-place: 74 components
 - Gerber: gerber\audio-mcu-board (16 layers)
 
@@ -21,9 +21,10 @@
 - .G2: 6 PlaneZones — power layer split per pcb-design.md §4 ✓ (matches expected rail count)
 - Board outline: 48.00 × 110.00 mm (X[0.00,48.00] Y[-110.00,0.00])
 - Named nets: ['+12V', '+3V3', '+3V3_AUDIO', '+3V3_PREC', '+5V', '-12V', '-12VEURO', '12VEURO', 'A-OUT-L', 'A-OUT-R', 'CLK-IN', 'CV-IN-A', 'CV-IN-B', 'CV-OUT-A', 'CV-OUT-B', 'DAC-SPI-CS', 'DAC-SPI-MOSI', 'DAC-SPI-SCLK', 'GATE-OUT-A', 'GATE-OUT-B', 'GND', 'I2S3_BCK', 'I2S3_SD', 'I2S3_WS', 'U12-BOOT', 'U12-FB', 'U12-SW', 'USR-ENC-A', 'USR-ENC-B', 'USR-ENC-SW', 'USR-POT-1', 'VREF', '~MUTE']
-- Anonymous (auto-generated $...) nets: 20
+- Anonymous (auto-generated $...) nets: 21
 - Single ground net (GND): ✓ matches pcb-design.md §3.
-- Eurorack 10-pin header P1: standard pinout ✓ ({-12V:[9, 10], GND:[3, 4, 5, 6, 7, 8], +12V:[1, 2]}). Verify silk stripe sits on -12V edge in EasyEDA Pro 2D view.
+- Datasheet power/ground pin connectivity: 17 power/GND pin(s) across 5 IC(s) all connected ✓ (would flag a floating supply/GND pin, e.g. the U6 pin-8 GND case).
+- Eurorack 10-pin header P1: standard pinout ✓ ({-12V:[1, 2], GND:[3, 4, 5, 6, 7, 8], +12V:[9, 10]}). Verify silk stripe sits on -12V edge in EasyEDA Pro 2D view.
 - Pass 3: skipping U1 (sub-module with internal decoupling).
 - Decoupling U12 +12V: nearest cap C5 at 3.05 mm ✓
 - Decoupling U14 +3V3_PREC: nearest cap C11 at 3.79 mm ✓
@@ -56,10 +57,10 @@
 - Placement H3   at (  45.0,   -32.3) side=top    fp=HDR-TH_8P-P2.54-V-M
 - Placement H4   at (   3.0,   -72.6) side=top    fp=HDR-TH_8P-P2.54-V-M
 - Placement H9   at (  45.0,   -77.7) side=top    fp=HDR-TH_12P-P2.54-V-M
-- I2S3_SD: members ['U1', 'U3']
 - I2S3_BCK: members ['U1', 'U3']
+- I2S3_SD: members ['U1', 'U3']
 - I2S3_WS: members ['U1', 'U3']
-- Trace widths on .GBL: 0.203mm×470, 0.254mm×62, 0.500mm×11, 1.000mm×13
-- Trace widths on .G2: 0.203mm×668
-- Trace widths on .GTL: 0.203mm×1352, 0.254mm×277, 0.400mm×9, 0.500mm×41, 0.700mm×4, 0.750mm×1, 0.800mm×2, 1.000mm×32
+- Trace widths on .GBL: 0.203mm×476, 0.254mm×63, 0.500mm×11, 1.000mm×13
+- Trace widths on .G2: 0.203mm×670
+- Trace widths on .GTL: 0.203mm×1349, 0.254mm×281, 0.400mm×9, 0.500mm×41, 0.700mm×4, 0.750mm×1, 0.800mm×2, 1.000mm×32
 - Per-net trace-width compliance (e.g. '+5V must be ≥ 0.6 mm') cannot be verified from gerber geometry alone — the gerber encodes geometry without net assignment. Verify visually in the EasyEDA Pro 2D view or by exporting routed length per net from the project.
