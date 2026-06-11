@@ -1,10 +1,13 @@
 #include "encoder.h"
 #include "main.h"
 
-/* TIM4 is configured in x4 encoder mode: 4 counts per detent on the
- * EC11E18244AU (24 PPR, 24 detents/rev = 1 quad cycle per detent).
- * We divide by 4 to return detent units. */
-#define COUNTS_PER_DETENT   4
+/* TIM4 is configured in x4 encoder mode. The fitted EC11E18244AU is a
+ * 36-detent / 18-pulse part: 18 electrical cycles/rev x 4 counts/cycle = 72
+ * counts/rev, over 36 detents = 2 counts/detent (i.e. it rests at a half-cycle
+ * detent, 2 detents per electrical cycle). This matches the datasheet and the
+ * bench measurement (10 detents -> 20 counts). We divide by 2 to return detent
+ * units. */
+#define COUNTS_PER_DETENT   2
 
 /* Long-press threshold in ms. See user-interface.md §2.5. */
 #define LONG_PRESS_MS       500
