@@ -111,15 +111,22 @@ manually via the encoder.
 ### PPQN detection / configuration
 
 PPQN is not auto-detected by default — the user sets it in the menu
-(default: 1 PPQN). Firmware divides or multiplies incoming edges as
+(**default: 4 PPQN**). Firmware divides or multiplies incoming edges as
 needed:
 
 | Setting | Meaning |
 |---|---|
 | 1 PPQN | One clock edge = one step (quarter note) |
 | 2 PPQN | Two edges per step — firmware counts every 2nd edge |
-| 4 PPQN | Four edges per step (common for DIN sync / some sequencers) |
-| 24 PPQN | Twenty-four edges per step (MIDI clock rate) |
+| **4 PPQN** | **Four edges per step (16th-note "step clock") — Doepfer analog default (MCV 24 / MSY2) and the common Eurorack default; the recommended default here** |
+| 24 PPQN | Twenty-four edges per step (MIDI clock rate / Roland DIN sync) |
+
+**BPM conversion:** `BPM = f_clk × 60 / PPQN` (f_clk in Hz). The earlier
+default of 1 PPQN reported 4× the true tempo against a standard Doepfer
+4-PPQN clock — e.g. a 120 BPM Doepfer clock emits 8 Hz, which at 1 PPQN
+reads "480 BPM". Defaulting to 4 PPQN makes the displayed tempo correct
+for typical Eurorack clocks. (Bench-confirmed 2026-06-10; the `firmware-test`
+harness hardcodes `CLK_PPQN = 4` for its `clk`/OLED readout.)
 
 If auto-detection is desired in a future revision, firmware can
 measure the edge rate against a known BPM range and infer PPQN — but

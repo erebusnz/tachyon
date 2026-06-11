@@ -60,6 +60,9 @@ void console_rx_byte(uint8_t b)
 #define TONE_AMP    0x30000000  /* ~0.375 full-scale, headroom against clipping */
 #define TWO_PI      6.283185307179586f
 #define F_TIM2      84000000.0f /* TIM2 = APB1x2 = 84 MHz (clock-in capture) */
+#define CLK_PPQN    4            /* clock-in pulses/quarter-note: 4 = Doepfer/
+                                  * Eurorack analog "step clock" default. BPM =
+                                  * freq*60/PPQN (clock-input.md). */
 
 static struct {
   uint8_t  active;                 /* 1 = emit sine, 0 = emit digital silence */
@@ -231,8 +234,8 @@ static void cmd_clk(void)
   uint32_t ticks = t2 - t1;                 /* 32-bit timer, wrap-safe */
   float period_us = (float)ticks / F_TIM2 * 1e6f;
   float freq = F_TIM2 / (float)ticks;
-  printf("clk: period=%.1f us  freq=%.3f Hz  bpm@1ppqn=%.2f\r\n",
-         period_us, freq, freq * 60.0f);
+  printf("clk: period=%.1f us  freq=%.3f Hz  bpm@%dppqn=%.2f\r\n",
+         period_us, freq, CLK_PPQN, freq * 60.0f / (float)CLK_PPQN);
 }
 
 /* ===================== USB-CDC command console ===================== */
@@ -595,7 +598,8 @@ static void menu_render_item(void)
       if (clkmon.period_ticks) {
         float freq = F_TIM2 / (float)clkmon.period_ticks;
         snprintf(b, sizeof b, "%.2f Hz", freq);                item_line(0, b);
-        snprintf(b, sizeof b, "%.1f BPM", freq * 60.0f);       item_line(1, b);
+        snprintf(b, sizeof b, "%.1f BPM", freq * 60.0f / (float)CLK_PPQN); item_line(1, b);
+        snprintf(b, sizeof b, "(%d PPQN)", CLK_PPQN);          item_line(2, b);
       } else {
         item_line(0, "no clock");
         item_line(1, "patch H9.8");
