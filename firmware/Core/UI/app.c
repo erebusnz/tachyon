@@ -10,6 +10,7 @@
 #include "gate_out.h"
 #include "clock_in.h"
 #include "arp.h"
+#include "analog_in.h"
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -48,12 +49,19 @@ static float note_cv_st(int st)
 static float note_freq(int idx) { return note_freq_st(cof_semitone(idx)); }
 static float note_cv(int idx)   { return note_cv_st(cof_semitone(idx)); }
 
+/* CV VCO free-run: oscillator pitch tracks CV-IN-A at 1 V/oct, 0 V = C3.
+ * CV-IN is a modulation input (uncalibrated, ~1.6 kHz filtered, see
+ * cv-input.md), so the CV-derived pitch is QUANTIZED to the nearest semitone —
+ * the imprecision snaps to clean in-tune notes instead of a detuned glide. */
+#define CV_VCO_BASE_MIDI   48        /* C3 at 0 V */
+
 /* Operating modes, in menu order. */
 typedef enum {
     APP_SCREEN_MENU = 0,
     APP_SCREEN_KEY_SELECT,
     APP_SCREEN_ARP,
     APP_SCREEN_PLAYBACK,
+    APP_SCREEN_CV,
 } AppScreen;
 
 /* Menu item indices map to the screens above (offset by one: index 0 -> the
@@ -62,6 +70,7 @@ static const char *const k_mode_items[] = {
     "Key Select",
     "Arp",
     "Playback",
+    "CV VCO",
 };
 #define MODE_COUNT  (sizeof(k_mode_items) / sizeof(k_mode_items[0]))
 
@@ -219,6 +228,47 @@ static void render_stub(const char *title)
     draw_centered(104, "hold = back", &Font12, FG_LEVEL, BG_LEVEL);
 }
 
+/* ---- CV VCO free-run screen ---- */
+
+static const char *const k_note_names[12] = {
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+};
+
+static int   s_cv_midi = -1;   /* current quantized MIDI note (-1 = unset) */
+
+/* Read CV-IN-A (1 V/oct, 0 V = C3), quantize to the nearest semitone (with a
+ * little hysteresis so noise near a step boundary doesn't flutter between
+ * notes), and drive the free-run oscillator at the exact note frequency. */
+static void cv_vco_update(void)
+{
+    float v = analog_in_cv_volts(ANALOG_CV_A);
+    float midi_f = (float)CV_VCO_BASE_MIDI + v * 12.0f;
+
+    if (s_cv_midi < 0 || fabsf(midi_f - (float)s_cv_midi) > 0.6f)
+        s_cv_midi = (int)lroundf(midi_f);
+    if (s_cv_midi < 0)   s_cv_midi = 0;
+    if (s_cv_midi > 127) s_cv_midi = 127;
+
+    float freq = 440.0f * powf(2.0f, (float)(s_cv_midi - 69) / 12.0f);
+    wt_osc_set_pitch(s_cv_midi, freq);
+}
+
+static void render_cv(void)
+{
+    char line[24];
+    Paint_Clear(BG_LEVEL);
+    Paint_DrawRectangle(0, 0, 127, 14, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    Paint_DrawString_EN(4, 1, "CV VCO", &Font12, BG_LEVEL, FG_LEVEL);
+
+    if (s_cv_midi >= 0) {
+        /* Note + octave is the whole point — big and centered. */
+        snprintf(line, sizeof line, "%s%d", k_note_names[s_cv_midi % 12],
+                 s_cv_midi / 12 - 1);
+        draw_centered(48, line, &Font24, FG_LEVEL, BG_LEVEL);
+    }
+    draw_centered(104, "hold = back", &Font12, FG_LEVEL, BG_LEVEL);
+}
+
 void app_init(void)
 {
     static const uint8_t triad[] = { 0, 4, 7 };  /* major triad of the key */
@@ -318,13 +368,27 @@ void app_tick(void)
         }
         render_stub("Playback");
         break;
+
+    case APP_SCREEN_CV:
+        if (ev == ENC_BTN_LONG_PRESS) {
+            s_screen = APP_SCREEN_MENU;
+            wt_osc_gate_off();          /* stop the free-run voice */
+        } else {
+            cv_vco_update();            /* track CV-IN-A -> pitch */
+            render_cv();
+        }
+        break;
     }
 
-    /* Central audio control: sound while the arp runs or in Key Select (for
-     * previews); otherwise mute. End any tone whose window has elapsed. */
-    audio_mute(!(arp_enabled() || s_screen == APP_SCREEN_KEY_SELECT));
-    if (s_tone_off && (int32_t)(now - s_tone_off) >= 0) {
-        wt_osc_gate_off();
-        s_tone_off = 0;
+    /* Central audio control. CV VCO sounds continuously; otherwise sound while
+     * the arp runs or in Key Select (previews), and end elapsed tones. */
+    if (s_screen == APP_SCREEN_CV) {
+        audio_mute(false);
+    } else {
+        audio_mute(!(arp_enabled() || s_screen == APP_SCREEN_KEY_SELECT));
+        if (s_tone_off && (int32_t)(now - s_tone_off) >= 0) {
+            wt_osc_gate_off();
+            s_tone_off = 0;
+        }
     }
 }

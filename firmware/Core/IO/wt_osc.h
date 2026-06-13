@@ -24,8 +24,13 @@ void wt_osc_init(void);
  * the multisample's pool). NULL = nothing loaded (renders silence). */
 void wt_osc_set_multisample(const multisample_t *ms);
 
-/* Start a note: pick the zone for `midi_note` and tune to `freq_hz`, gate on. */
+/* Start a note: pick the zone for `midi_note` and tune to `freq_hz`, gate on.
+ * Restarts the table phase on a new zone (clean note attack). */
 void wt_osc_note(int midi_note, float freq_hz);
+
+/* Continuously update pitch/zone and keep sounding, WITHOUT restarting the
+ * phase — for free-run (CV-tracked) operation, so pitch glides click-free. */
+void wt_osc_set_pitch(int midi_note, float freq_hz);
 
 /* Gate off — render silence (clocks keep running). */
 void wt_osc_gate_off(void);

@@ -85,17 +85,30 @@ void wt_osc_set_multisample(const multisample_t *ms)
     __enable_irq();
 }
 
-void wt_osc_note(int midi_note, float freq_hz)
+/* Select the zone for `midi_note`, tune to `freq_hz`, gate on. `reset_phase`
+ * restarts the table (clean attack) on a new zone; continuous pitch updates
+ * (CV) pass 0 to glide without clicks. */
+static void wt_set(int midi_note, float freq_hz, int reset_phase)
 {
     const ms_zone_t *z = select_zone(s_ms, midi_note);
     float inc = (z && z->frames) ? (freq_hz * (float)z->frames / AUDIO_FS_HZ) : 0.0f;
 
     __disable_irq();
-    if (z != s_zone) s_phase = 0.0f;   /* fresh table: restart phase */
+    if (reset_phase && z != s_zone) s_phase = 0.0f;
     s_zone = z;
     s_phase_inc = inc;
     s_active = 1;
     __enable_irq();
+}
+
+void wt_osc_note(int midi_note, float freq_hz)
+{
+    wt_set(midi_note, freq_hz, 1);
+}
+
+void wt_osc_set_pitch(int midi_note, float freq_hz)
+{
+    wt_set(midi_note, freq_hz, 0);
 }
 
 void wt_osc_gate_off(void)
