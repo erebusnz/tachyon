@@ -170,8 +170,13 @@ void HAL_I2S_MspInit(I2S_HandleTypeDef* hi2s)
 
   /** Initializes the peripherals clock
   */
+    /* PLLI2S: input 2 MHz (HSE 8 MHz / PLLM 4). N=86,R=2 -> I2SCLK = 86 MHz.
+     * For 192 kHz / 32-bit / MCLK-off the HAL picks divider 7, giving
+     * 86 MHz/(64*7) = 191964.3 Hz — only -0.32 cents off 192 kHz. (The old
+     * N=192 gave I2SCLK=192 MHz -> 187.5 kHz, -41 cents. Exact 192.000 kHz is
+     * unreachable from an 8 MHz HSE with the integer PLLI2S.) */
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
-    PeriphClkInitStruct.PLLI2S.PLLI2SN = 192;
+    PeriphClkInitStruct.PLLI2S.PLLI2SN = 86;
     PeriphClkInitStruct.PLLI2S.PLLI2SR = 2;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
     {

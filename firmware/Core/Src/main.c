@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <math.h>
 #include "usbd_cdc_if.h"
 #include "DEV_Config.h"
 #include "OLED_1in5.h"
@@ -37,6 +38,7 @@
 #include "clock_in.h"
 #include "sd_fs.h"
 #include "multisample.h"
+#include "wt_osc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -70,7 +72,9 @@ TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
-
+/* Active multisample (loaded from SD at boot, played by the wavetable osc). */
+static multisample_t g_ms;
+static int           g_ms_ok;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -163,10 +167,9 @@ int main(void)
   if (HAL_GPIO_ReadPin(SD_CD_GPIO_Port, SD_CD_Pin) == GPIO_PIN_SET) {
     if (sd_fs_mount()) {
       sd_fs_dump_root();
-      /* Phase 2 bring-up: load one multisample folder and dump its zone table. */
-      static multisample_t ms;
-      if (multisample_load("0:/fractional_polygonal_1_base_18_harmonics_resamp", &ms))
-        multisample_dump(&ms);
+      /* Load a default multisample for the wavetable oscillator. */
+      g_ms_ok = multisample_load("0:/scaled_polygonal_1_base_3_harmonics_resamp", &g_ms);
+      if (g_ms_ok) multisample_dump(&g_ms);
     }
   } else {
     printf("No SD card detected\r\n");
@@ -196,6 +199,12 @@ int main(void)
   gate_out_init();
   analog_in_init();
   clock_in_init();
+
+  /* Wavetable oscillator is the audio voice: install it on the render seam and
+   * point it at the loaded multisample (silent until a note is gated on). */
+  wt_osc_init();
+  if (g_ms_ok) wt_osc_set_multisample(&g_ms);
+  wt_osc_install();
 
   /* Boot into the operating-mode menu. */
   app_init();

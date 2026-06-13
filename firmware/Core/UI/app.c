@@ -6,6 +6,7 @@
 #include "main.h"
 #include "cv_out.h"
 #include "audio.h"
+#include "wt_osc.h"
 #include "gate_out.h"
 #include "clock_in.h"
 #include "arp.h"
@@ -85,7 +86,7 @@ static void arp_step_cb(int semitone, uint32_t gate_ms, void *ctx)
     (void)ctx;
     int st = s_root_semitone + semitone;
     cv_out_write_volts(CV_OUT_A, note_cv_st(st));
-    audio_tone(note_freq_st(st));
+    wt_osc_note(60 + st, note_freq_st(st));   /* MIDI C4 = 60 = semitone 0 */
     gate_out_pulse(GATE_A, gate_ms);
     gate_out_pulse(GATE_B, gate_ms);
     s_tone_off = HAL_GetTick() + gate_ms;
@@ -96,7 +97,7 @@ static void arp_step_cb(int semitone, uint32_t gate_ms, void *ctx)
 static void key_preview(int idx)
 {
     cv_out_write_volts(CV_OUT_A, note_cv(idx));
-    audio_tone(note_freq(idx));
+    wt_osc_note(60 + cof_semitone(idx), note_freq(idx));
     gate_out_pulse(GATE_A, PREVIEW_MS);
     gate_out_pulse(GATE_B, PREVIEW_MS);
     s_tone_off = HAL_GetTick() + PREVIEW_MS;
@@ -323,7 +324,7 @@ void app_tick(void)
      * previews); otherwise mute. End any tone whose window has elapsed. */
     audio_mute(!(arp_enabled() || s_screen == APP_SCREEN_KEY_SELECT));
     if (s_tone_off && (int32_t)(now - s_tone_off) >= 0) {
-        audio_tone_off();
+        wt_osc_gate_off();
         s_tone_off = 0;
     }
 }
