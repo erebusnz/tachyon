@@ -2,6 +2,38 @@
 
 ## Flashing
 
+### ST-LINK/V2 over SWD (preferred)
+
+Fastest path — no BOOT0/DFU dance, ~2 s per flash. Wire the ST-LINK/V2 to the
+WeAct board's SWD header (PA13/PA14, see `hardware-design-plan.md`):
+
+| ST-LINK pin | Board pin |
+|---|---|
+| SWDIO | PA13 (`DIO`) |
+| SWCLK | PA14 (`CLK`) |
+| GND | GND |
+| 3.3V (VTref) | 3V3 |
+
+The `3.3V`/VTref wire is required even when the board is self-powered — the
+ST-LINK senses target voltage on it before driving the SWD lines (a missing
+VTref shows up as `Voltage : 0.00V` and `Unable to get core ID`). With the board
+self-powered this ties the probe's 3.3 V to the live 3V3 rail (both ~3.3 V),
+which is fine for programming.
+
+Build and flash with the helper script (auto-discovers `STM32_Programmer_CLI`):
+```powershell
+./flash.ps1            # flash build/Debug/firmware.elf
+./flash.ps1 -Build     # build Debug first, then flash
+./flash.ps1 Release    # flash the Release build
+```
+
+Or invoke the programmer directly:
+```
+STM32_Programmer_CLI --connect port=SWD mode=UR --download build\Debug\firmware.elf --start
+```
+
+### DFU over USB (fallback, no ST-LINK)
+
 Hold down the BOOT0 (B0) button and connect to the computer via USB, release after 1s. You should now be in DFU mode over USB.
 
 You can test connection with:
@@ -11,7 +43,7 @@ STM32_Programmer_CLI --connect port=USB1
 
 Flashing firmware:
 ```
-STM32_Programmer_CLI --connect port=USB1 --download build\firmware.elf 0x08000000 --start
+STM32_Programmer_CLI --connect port=USB1 --download build\Debug\firmware.elf 0x08000000 --start
 ```
 
 ## Audio output (PCM5102A) — I2S considerations

@@ -27,9 +27,14 @@
 #include "DEV_Config.h"
 #include "OLED_1in5.h"
 #include "GUI_Paint.h"
-#include "circle_of_fifths.h"
 #include "encoder.h"
-#include <math.h>
+#include "app.h"
+#include "boot.h"
+#include "audio.h"
+#include "cv_out.h"
+#include "gate_out.h"
+#include "analog_in.h"
+#include "clock_in.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,6 +56,7 @@
 ADC_HandleTypeDef hadc1;
 
 I2S_HandleTypeDef hi2s3;
+DMA_HandleTypeDef hdma_spi3_tx;
 
 SD_HandleTypeDef hsd;
 
@@ -68,6 +74,7 @@ TIM_HandleTypeDef htim4;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_I2S3_Init(void);
@@ -118,6 +125,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_USB_DEVICE_Init();
   MX_SPI1_Init();
   MX_TIM4_Init();
@@ -139,23 +147,28 @@ int main(void)
   OLED_1in5_Clear();
 
   static UBYTE image[128 * 128 / 2];
-  Paint_NewImage(image, 128, 128, 180, BLACK);
+  Paint_NewImage(image, 128, 128, 0, BLACK);
   Paint_SetScale(16);
   Paint_SelectImage(image);
 
   encoder_init();
   printf("Encoder initialized\r\n");
-
-  /* One detent = 30 degrees = one step around the circle of fifths. */
-  float angle = 0.0f;
-  uint8_t marked[12] = {0};
   printf("OLED initialized\r\n");
 
-  /* Startup-complete LED flash on PB2 (WeAct user LED, active-high). */
-  for (int i = 0; i < 6; i++) {
-    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2);
-    HAL_Delay(100);
-  }
+  /* Power-on starfield hyperdrive splash (5 s). */
+  boot_splash(image, 5000);
+
+  /* Bring up the signal-IO driver layer. audio_init starts the continuous
+   * (muted) I2S stream so the PCM5102A clocks stay locked; cv_out/gate_out
+   * settle to a safe zero state; analog_in/clock_in arm their inputs. */
+  audio_init();
+  cv_out_init();
+  gate_out_init();
+  analog_in_init();
+  clock_in_init();
+
+  /* Boot into the operating-mode menu. */
+  app_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -165,28 +178,18 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    int32_t detents = encoder_get_delta();
-    if (detents) {
-      angle += (float)detents * 30.0f;
-      while (angle < 0.0f)    angle += 360.0f;
-      while (angle >= 360.0f) angle -= 360.0f;
-      printf("ENC delta=%ld angle=%d\r\n", (long)detents, (int)angle);
-    }
+    uint32_t now = HAL_GetTick();
 
-    encoder_btn_event_t ev = encoder_get_button_event();
-    if (ev == ENC_BTN_SHORT_PRESS) {
-      /* Toggle the centered note's mark. Centered = note at top (angle 0). */
-      int snapped = (int)lroundf(angle / 30.0f);
-      int idx = ((snapped % 12) + 12) % 12;
-      marked[idx] = !marked[idx];
-      printf("ENC mark toggle: idx=%d marked=%u\r\n", idx, marked[idx]);
-    } else if (ev == ENC_BTN_LONG_PRESS) {
-      for (int i = 0; i < 12; i++) marked[i] = 0;
-      printf("ENC long press: marks cleared\r\n");
-    }
+    /* Refresh inputs first so app_tick (arp external-clock stepping) sees the
+     * freshest CLK-IN edge this pass. */
+    clock_in_poll(now);
+    analog_in_sample();
 
-    cof_render_angle(angle, marked);
+    app_tick();
     OLED_1in5_Display(image);
+
+    /* Apply gate timing after the app may have (re)started pulses this pass. */
+    gate_out_service(now);
   }
   /* USER CODE END 3 */
 }
@@ -304,6 +307,21 @@ static void MX_ADC1_Init(void)
 
   /* USER CODE END ADC1_Init 2 */
 
+}
+
+/**
+  * Enable DMA controller clock and the SPI3_TX stream interrupt.
+  * Must run before MX_I2S3_Init so the DMA link in HAL_I2S_MspInit is valid.
+  */
+static void MX_DMA_Init(void)
+{
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init: SPI3_TX = DMA1_Stream5. Low priority so the USB CDC
+   * and SysTick IRQs always preempt the (sinf-heavy) audio refill callback. */
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 8, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
 }
 
 /**

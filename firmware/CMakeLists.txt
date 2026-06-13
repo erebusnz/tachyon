@@ -53,6 +53,16 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/WAVESHARE_OLED/Fonts/font20.c
     Drivers/WAVESHARE_OLED/Fonts/font24.c
     Core/UI/circle_of_fifths.c
+    Core/UI/menu.c
+    Core/UI/text.c
+    Core/UI/boot.c
+    Core/UI/app.c
+    Core/IO/audio.c
+    Core/IO/cv_out.c
+    Core/IO/gate_out.c
+    Core/IO/analog_in.c
+    Core/IO/clock_in.c
+    Core/Music/arp.c
     Core/Src/encoder.c
 )
 
@@ -63,6 +73,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/WAVESHARE_OLED/GUI
     Drivers/WAVESHARE_OLED/Fonts
     Core/UI
+    Core/IO
+    Core/Music
 )
 
 # Add project symbols (macros)
