@@ -64,6 +64,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/IO/clock_in.c
     Core/IO/sd_diskio.c
     Core/IO/sd_fs.c
+    Core/IO/wav.c
+    Core/IO/korg_ms.c
+    Core/IO/multisample.c
     Core/Music/arp.c
     Core/Src/encoder.c
     # FatFs (ChaN R0.15) — SD-card filesystem, LFN + exFAT

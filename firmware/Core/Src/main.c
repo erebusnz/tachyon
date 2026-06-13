@@ -36,6 +36,7 @@
 #include "analog_in.h"
 #include "clock_in.h"
 #include "sd_fs.h"
+#include "multisample.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -153,7 +154,13 @@ int main(void)
 
   /* Phase 1 bring-up: mount the SD card and enumerate wavetable folders. */
   if (HAL_GPIO_ReadPin(SD_CD_GPIO_Port, SD_CD_Pin) == GPIO_PIN_SET) {
-    if (sd_fs_mount()) sd_fs_dump_root();
+    if (sd_fs_mount()) {
+      sd_fs_dump_root();
+      /* Phase 2 bring-up: load one multisample folder and dump its zone table. */
+      static multisample_t ms;
+      if (multisample_load("0:/fractional_polygonal_1_base_18_harmonics_resamp", &ms))
+        multisample_dump(&ms);
+    }
   } else {
     printf("No SD card detected\r\n");
   }
