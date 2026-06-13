@@ -91,13 +91,20 @@ static void MX_TIM3_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+extern USBD_HandleTypeDef hUsbDeviceFS;
+
 int _write(int file, char *ptr, int len)
 {
     (void)file;
+    /* No host connected? Drop the output. Without this the module would stall
+     * ~20 ms per printf when run standalone (CDC reports busy / NULL handle
+     * until the device is enumerated). printf becomes a harmless no-op. */
+    if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED)
+        return len;
     /* CDC_Transmit_FS drops the buffer (returns USBD_BUSY) while a previous
      * packet is still in flight, so back-to-back printf lines would be lost.
-     * Wait briefly for the IN endpoint to free up; bound the wait so boot still
-     * proceeds when no host is reading the port. */
+     * Wait briefly for the IN endpoint to free up; bound the wait so we never
+     * block long even if the host stops draining the port. */
     uint32_t start = HAL_GetTick();
     while (CDC_Transmit_FS((uint8_t*)ptr, (uint16_t)len) == USBD_BUSY) {
         if ((HAL_GetTick() - start) >= 20U) break;
