@@ -35,6 +35,7 @@
 #include "gate_out.h"
 #include "analog_in.h"
 #include "clock_in.h"
+#include "sd_fs.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -91,7 +92,15 @@ static void MX_TIM3_Init(void);
 /* USER CODE BEGIN 0 */
 int _write(int file, char *ptr, int len)
 {
-    CDC_Transmit_FS((uint8_t*)ptr, len);
+    (void)file;
+    /* CDC_Transmit_FS drops the buffer (returns USBD_BUSY) while a previous
+     * packet is still in flight, so back-to-back printf lines would be lost.
+     * Wait briefly for the IN endpoint to free up; bound the wait so boot still
+     * proceeds when no host is reading the port. */
+    uint32_t start = HAL_GetTick();
+    while (CDC_Transmit_FS((uint8_t*)ptr, (uint16_t)len) == USBD_BUSY) {
+        if ((HAL_GetTick() - start) >= 20U) break;
+    }
     return len;
 }
 /* USER CODE END 0 */
@@ -141,6 +150,13 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_Delay(1000);
   printf("USB ready\r\n");
+
+  /* Phase 1 bring-up: mount the SD card and enumerate wavetable folders. */
+  if (HAL_GPIO_ReadPin(SD_CD_GPIO_Port, SD_CD_Pin) == GPIO_PIN_SET) {
+    if (sd_fs_mount()) sd_fs_dump_root();
+  } else {
+    printf("No SD card detected\r\n");
+  }
 
   System_Init();
   OLED_1in5_Init();
@@ -379,7 +395,12 @@ static void MX_SDIO_SD_Init(void)
   hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
   hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
   hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
-  hsd.Init.ClockDiv = 0;
+  /* SDIO_CK = 48 MHz / (ClockDiv + 2). ClockDiv=8 -> 4.8 MHz. We read blocks
+   * in polling mode (no SDIO DMA wired up); at the full 24 MHz the -O0 HAL
+   * read loop cannot drain the 16-word FIFO in time and RX-overruns
+   * (HAL_SD_ERROR_RX_OVERRUN). Samples are loaded to RAM once (not streamed),
+   * so the slower clock costs nothing. */
+  hsd.Init.ClockDiv = 8;
   if (HAL_SD_Init(&hsd) != HAL_OK)
   {
     Error_Handler();

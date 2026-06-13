@@ -62,8 +62,14 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/IO/gate_out.c
     Core/IO/analog_in.c
     Core/IO/clock_in.c
+    Core/IO/sd_diskio.c
+    Core/IO/sd_fs.c
     Core/Music/arp.c
     Core/Src/encoder.c
+    # FatFs (ChaN R0.15) — SD-card filesystem, LFN + exFAT
+    Middlewares/Third_Party/FatFs/src/ff.c
+    Middlewares/Third_Party/FatFs/src/ffunicode.c
+    Middlewares/Third_Party/FatFs/src/ffsystem.c
 )
 
 # Add include paths
@@ -75,6 +81,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Core/UI
     Core/IO
     Core/Music
+    Middlewares/Third_Party/FatFs/src
 )
 
 # Add project symbols (macros)
