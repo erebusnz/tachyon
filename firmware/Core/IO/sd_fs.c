@@ -2,6 +2,7 @@
 #include "ff.h"
 #include "main.h"
 #include <stdio.h>
+#include <string.h>
 
 extern SD_HandleTypeDef hsd;                 /* main.c */
 extern volatile int      sd_diskio_last_stage;  /* sd_diskio.c */
@@ -90,4 +91,25 @@ void sd_fs_dump_root(void)
     }
     f_closedir(&dir);
     printf("root: %d folders, %d files\r\n", folders, files);
+}
+
+int sd_fs_list_folders(char (*names)[SD_FOLDER_NAME_LEN], int max)
+{
+    if (!s_mounted) return 0;
+
+    DIR     dir;
+    FILINFO fno;
+    if (f_opendir(&dir, "0:/") != FR_OK) return 0;
+
+    int n = 0;
+    while (n < max) {
+        if (f_readdir(&dir, &fno) != FR_OK || fno.fname[0] == 0) break;
+        if (!(fno.fattrib & AM_DIR)) continue;             /* dirs only */
+        if (fno.fname[0] == '.') continue;                 /* skip . / hidden */
+        if (strcmp(fno.fname, "System Volume Information") == 0) continue;
+        snprintf(names[n], SD_FOLDER_NAME_LEN, "%.*s", SD_FOLDER_NAME_LEN - 1, fno.fname);
+        n++;
+    }
+    f_closedir(&dir);
+    return n;
 }

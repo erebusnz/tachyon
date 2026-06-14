@@ -67,6 +67,20 @@ DSTATUS disk_initialize(BYTE pdrv)
     return s_stat;
 }
 
+/* Read blocks with the audio I2S-DMA refill IRQ masked. The SDIO read is
+ * polling-mode in thread context; the audio render IRQ (DMA1_Stream5) would
+ * otherwise preempt the FIFO-drain loop long enough to RX-overrun at the slow
+ * polling clock, corrupting reads (e.g. garbled directory listings). The DMA
+ * keeps clocking the DAC during the sub-millisecond transfer; only the CPU-side
+ * refill pauses, so audio just isn't topped up for that brief window. */
+static HAL_StatusTypeDef sd_read_blocks(uint8_t *buf, uint32_t sector, uint32_t count)
+{
+    HAL_NVIC_DisableIRQ(DMA1_Stream5_IRQn);
+    HAL_StatusTypeDef hs = HAL_SD_ReadBlocks(&hsd, buf, sector, count, SD_TIMEOUT_MS);
+    HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+    return hs;
+}
+
 DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 {
     if (pdrv != SD_PDRV)   return RES_PARERR;
@@ -80,7 +94,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
             sd_diskio_last_stage = 1; sd_diskio_last_err = hsd.ErrorCode;
             return RES_NOTRDY;
         }
-        hs = HAL_SD_ReadBlocks(&hsd, buff, (uint32_t)sector, count, SD_TIMEOUT_MS);
+        hs = sd_read_blocks(buff, (uint32_t)sector, count);
         if (hs != HAL_OK) {
             sd_diskio_last_stage = 2; sd_diskio_last_hal = hs;
             sd_diskio_last_err = hsd.ErrorCode;
@@ -96,8 +110,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
     /* Unaligned caller buffer: stage one block at a time through the bounce. */
     for (UINT i = 0; i < count; i++) {
         if (!sd_wait_ready(SD_TIMEOUT_MS)) return RES_NOTRDY;
-        if (HAL_SD_ReadBlocks(&hsd, (uint8_t *)s_bounce, (uint32_t)sector + i, 1,
-                              SD_TIMEOUT_MS) != HAL_OK) {
+        if (sd_read_blocks((uint8_t *)s_bounce, (uint32_t)sector + i, 1) != HAL_OK) {
             return RES_ERROR;
         }
         if (!sd_wait_ready(SD_TIMEOUT_MS)) return RES_ERROR;

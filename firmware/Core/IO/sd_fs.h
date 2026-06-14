@@ -20,4 +20,11 @@ bool sd_fs_mounted(void);
  * each sub-directory (one wavetable folder per line) and a folder/file tally. */
 void sd_fs_dump_root(void);
 
+/* Max stored length of a wavetable folder name (longest stock name ~62 chars). */
+#define SD_FOLDER_NAME_LEN  64
+
+/* List the card root's sub-directories (candidate wavetable folders) into
+ * `names`, up to `max`. Skips hidden/system folders. Returns the count. */
+int sd_fs_list_folders(char (*names)[SD_FOLDER_NAME_LEN], int max);
+
 #endif

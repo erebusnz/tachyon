@@ -37,7 +37,6 @@
 #include "analog_in.h"
 #include "clock_in.h"
 #include "sd_fs.h"
-#include "multisample.h"
 #include "wt_osc.h"
 /* USER CODE END Includes */
 
@@ -72,9 +71,7 @@ TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
-/* Active multisample (loaded from SD at boot, played by the wavetable osc). */
-static multisample_t g_ms;
-static int           g_ms_ok;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -163,14 +160,9 @@ int main(void)
   HAL_Delay(1000);
   printf("USB ready\r\n");
 
-  /* Phase 1 bring-up: mount the SD card and enumerate wavetable folders. */
+  /* Mount the SD card; the app loads/selects wavetables from it. */
   if (HAL_GPIO_ReadPin(SD_CD_GPIO_Port, SD_CD_Pin) == GPIO_PIN_SET) {
-    if (sd_fs_mount()) {
-      sd_fs_dump_root();
-      /* Load a default multisample for the wavetable oscillator. */
-      g_ms_ok = multisample_load("0:/scaled_polygonal_1_base_3_harmonics_resamp", &g_ms);
-      if (g_ms_ok) multisample_dump(&g_ms);
-    }
+    if (sd_fs_mount()) sd_fs_dump_root();
   } else {
     printf("No SD card detected\r\n");
   }
@@ -188,6 +180,11 @@ int main(void)
   printf("Encoder initialized\r\n");
   printf("OLED initialized\r\n");
 
+  /* Load SD data (folder list + default wavetable) NOW, while audio is still
+   * off — SD reads here have no audio-DMA/render-IRQ contention. The user
+   * expects silence during the boot splash anyway. */
+  app_preload();
+
   /* Power-on starfield hyperdrive splash (5 s). */
   boot_splash(image, 5000);
 
@@ -200,13 +197,12 @@ int main(void)
   analog_in_init();
   clock_in_init();
 
-  /* Wavetable oscillator is the audio voice: install it on the render seam and
-   * point it at the loaded multisample (silent until a note is gated on). */
+  /* Wavetable oscillator is the audio voice: install it on the render seam. */
   wt_osc_init();
-  if (g_ms_ok) wt_osc_set_multisample(&g_ms);
   wt_osc_install();
 
-  /* Boot into the operating-mode menu. */
+  /* Boot into the menu; app_init points the oscillator at the preloaded
+   * wavetable (silent until a note is gated on). */
   app_init();
   /* USER CODE END 2 */
 
@@ -301,13 +297,16 @@ static void MX_ADC1_Init(void)
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = ENABLE;
+  /* Single-channel mode: analog_in reads CV-A/CV-B/pot one at a time
+   * (reconfiguring the channel per read) — a polled multi-rank scan overruns
+   * the data register and misaligns channels on the F4. */
+  hadc1.Init.ScanConvMode = DISABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 3;
+  hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)

@@ -13,7 +13,14 @@
  * The encoder must be initialised (encoder_init) before app_tick() is called.
  */
 
-/* Reset to the main menu and clear per-mode state. Call once after init. */
+/* Do all boot-time SD I/O while audio is still silent: cache the wavetable
+ * folder list and load the default wavetable. Call once BEFORE audio_init()
+ * (and after the SD volume is mounted) so SD reads never contend with the audio
+ * DMA/render IRQ. */
+void app_preload(void);
+
+/* Reset to the main menu and clear per-mode state, and point the oscillator at
+ * the preloaded wavetable. Call once after audio_init()/wt_osc_install(). */
 void app_init(void);
 
 /* Consume pending encoder input, advance the state machine, and render the

@@ -11,6 +11,8 @@
 #include "clock_in.h"
 #include "arp.h"
 #include "analog_in.h"
+#include "multisample.h"
+#include "sd_fs.h"
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
@@ -55,13 +57,15 @@ static float note_cv(int idx)   { return note_cv_st(cof_semitone(idx)); }
  * the imprecision snaps to clean in-tune notes instead of a detuned glide. */
 #define CV_VCO_BASE_MIDI   48        /* C3 at 0 V */
 
-/* Operating modes, in menu order. */
+/* Operating modes, in menu order. APP_SCREEN_BROWSE is not a menu item — it is
+ * reached from the Audio Cfg screen. */
 typedef enum {
     APP_SCREEN_MENU = 0,
     APP_SCREEN_KEY_SELECT,
     APP_SCREEN_ARP,
-    APP_SCREEN_PLAYBACK,
     APP_SCREEN_CV,
+    APP_SCREEN_AUDIO,
+    APP_SCREEN_BROWSE,
 } AppScreen;
 
 /* Menu item indices map to the screens above (offset by one: index 0 -> the
@@ -69,8 +73,8 @@ typedef enum {
 static const char *const k_mode_items[] = {
     "Key Select",
     "Arp",
-    "Playback",
     "CV VCO",
+    "Audio Cfg",
 };
 #define MODE_COUNT  (sizeof(k_mode_items) / sizeof(k_mode_items[0]))
 
@@ -80,6 +84,53 @@ static float     s_key_angle;     /* circle-of-fifths rotation, degrees */
 static uint8_t   s_marked[12];    /* per-note mark flags */
 static uint32_t  s_tone_off;      /* HAL tick to silence the current tone (0 = none) */
 static int       s_root_semitone; /* chromatic root for pitch mapping (live) */
+
+/* ---- active wavetable + SD folder browser ---- */
+#define WT_MAX_FOLDERS   160
+#define DEFAULT_WT       "scaled_polygonal_1_base_3_harmonics_resamp"
+
+static multisample_t s_active_ms;                 /* the loaded multisample */
+static char  s_cur_wt[SD_FOLDER_NAME_LEN];         /* its folder name */
+static bool  s_wt_loaded;
+static int   s_level_pct = 100;                    /* output level 0..100 */
+static char  s_folders[WT_MAX_FOLDERS][SD_FOLDER_NAME_LEN];
+static int   s_folder_count;
+static int   s_browse_sel;
+static int   s_audio_cursor;    /* Audio Cfg row: 0=Wavetable, 1=Level */
+static bool  s_audio_editing;   /* Audio Cfg: rotation edits Level value */
+#define AUDIO_ROWS  2
+
+/* SD read of wavetable folder `name` into the active multisample. No oscillator
+ * calls — pure data load. Returns true on success. */
+static bool load_wt_data(const char *name)
+{
+    char path[16 + SD_FOLDER_NAME_LEN];
+    snprintf(path, sizeof path, "0:/%s", name);
+    if (multisample_load(path, &s_active_ms)) {
+        snprintf(s_cur_wt, sizeof s_cur_wt, "%s", name);
+        s_wt_loaded = true;
+        return true;
+    }
+    s_wt_loaded = false;
+    return false;
+}
+
+/* Runtime wavetable change (from the browser). Gates the oscillator to silence
+ * while the SD read rewrites the PCM pool, then re-points it. */
+static void app_load_wavetable(const char *name)
+{
+    wt_osc_set_multisample(NULL);
+    if (load_wt_data(name)) wt_osc_set_multisample(&s_active_ms);
+}
+
+void app_preload(void)
+{
+    /* Runs before audio_init(): SD reads here have no audio-IRQ contention, so
+     * the folder list (cached for the browser) and the default wavetable load
+     * reliably. */
+    s_folder_count = sd_fs_list_folders(s_folders, WT_MAX_FOLDERS);
+    load_wt_data(DEFAULT_WT);
+}
 
 /* Note index currently centered at the top of the wheel (angle 0). */
 static int centered_note_index(void)
@@ -210,7 +261,7 @@ static void arp_render(void)
     }
 }
 
-/* ---- generic placeholder screen ---- */
+/* ---- shared helper: draw a horizontally-centered string ---- */
 
 static void draw_centered(int y, const char *s, sFONT *font, UWORD fg, UWORD bg)
 {
@@ -220,12 +271,15 @@ static void draw_centered(int y, const char *s, sFONT *font, UWORD fg, UWORD bg)
     Paint_DrawString_EN((UWORD)x, (UWORD)y, s, font, fg, bg);
 }
 
-static void render_stub(const char *title)
+/* Draw a list row at `y`; highlighted (inverted) when selected. */
+static void draw_row(int y, const char *s, int selected)
 {
-    Paint_Clear(BG_LEVEL);
-    draw_centered(36, title, &Font16, FG_LEVEL, BG_LEVEL);
-    draw_centered(64, "coming soon", &Font12, FG_LEVEL, BG_LEVEL);
-    draw_centered(104, "hold = back", &Font12, FG_LEVEL, BG_LEVEL);
+    if (selected) {
+        Paint_DrawRectangle(0, y - 1, 127, y + 12, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        Paint_DrawString_EN(4, y, s, &Font12, BG_LEVEL, FG_LEVEL);
+    } else {
+        Paint_DrawString_EN(4, y, s, &Font12, FG_LEVEL, BG_LEVEL);
+    }
 }
 
 /* ---- CV VCO free-run screen ---- */
@@ -235,13 +289,14 @@ static const char *const k_note_names[12] = {
 };
 
 static int   s_cv_midi = -1;   /* current quantized MIDI note (-1 = unset) */
+static uint8_t s_cv_src = ANALOG_CV_A;   /* CV VCO input: CV-IN-A or CV-IN-B */
 
 /* Read CV-IN-A (1 V/oct, 0 V = C3), quantize to the nearest semitone (with a
  * little hysteresis so noise near a step boundary doesn't flutter between
  * notes), and drive the free-run oscillator at the exact note frequency. */
 static void cv_vco_update(void)
 {
-    float v = analog_in_cv_volts(ANALOG_CV_A);
+    float v = analog_in_cv_volts(s_cv_src);
     float midi_f = (float)CV_VCO_BASE_MIDI + v * 12.0f;
 
     if (s_cv_midi < 0 || fabsf(midi_f - (float)s_cv_midi) > 0.6f)
@@ -258,15 +313,85 @@ static void render_cv(void)
     char line[24];
     Paint_Clear(BG_LEVEL);
     Paint_DrawRectangle(0, 0, 127, 14, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    Paint_DrawString_EN(4, 1, "CV VCO", &Font12, BG_LEVEL, FG_LEVEL);
+    snprintf(line, sizeof line, "CV VCO   in: %c",
+             s_cv_src == ANALOG_CV_B ? 'B' : 'A');
+    Paint_DrawString_EN(4, 1, line, &Font12, BG_LEVEL, FG_LEVEL);
 
     if (s_cv_midi >= 0) {
         /* Note + octave is the whole point — big and centered. */
         snprintf(line, sizeof line, "%s%d", k_note_names[s_cv_midi % 12],
                  s_cv_midi / 12 - 1);
-        draw_centered(48, line, &Font24, FG_LEVEL, BG_LEVEL);
+        draw_centered(44, line, &Font24, FG_LEVEL, BG_LEVEL);
     }
+    draw_centered(86, "push = A/B", &Font12, FG_LEVEL, BG_LEVEL);
     draw_centered(104, "hold = back", &Font12, FG_LEVEL, BG_LEVEL);
+}
+
+/* ---- Audio Config + wavetable browser ---- */
+
+#define BROWSE_ROWS  8
+
+static void enter_browser(void)
+{
+    /* Folder list was cached at boot by app_preload() — no SD read here. Just
+     * place the cursor on the current wavetable. */
+    s_browse_sel = 0;
+    for (int i = 0; i < s_folder_count; i++)
+        if (strcmp(s_folders[i], s_cur_wt) == 0) { s_browse_sel = i; break; }
+    s_screen = APP_SCREEN_BROWSE;
+}
+
+static void render_audio_cfg(void)
+{
+    char line[24];
+    Paint_Clear(BG_LEVEL);
+    Paint_DrawRectangle(0, 0, 127, 14, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    Paint_DrawString_EN(4, 1, "Audio Cfg", &Font12, BG_LEVEL, FG_LEVEL);
+
+    /* Row 0: Wavetable (push opens the browser). Current name shown below. */
+    draw_row(22, "Wavetable", s_audio_cursor == 0);
+    snprintf(line, sizeof line, " %.18s", s_wt_loaded ? s_cur_wt : "(none)");
+    Paint_DrawString_EN(4, 38, line, &Font12, FG_LEVEL, BG_LEVEL);
+
+    /* Row 1: Level (push toggles edit; then rotate adjusts). */
+    snprintf(line, sizeof line, "Level: %d%%%s", s_level_pct,
+             s_audio_editing ? "  edit" : "");
+    draw_row(62, line, s_audio_cursor == 1);
+
+    draw_centered(104, s_audio_editing ? "turn=adjust  push=ok"
+                                       : "turn=move  push=open", &Font12,
+                 FG_LEVEL, BG_LEVEL);
+}
+
+static void render_browse(void)
+{
+    char line[24];
+    Paint_Clear(BG_LEVEL);
+    Paint_DrawRectangle(0, 0, 127, 12, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    snprintf(line, sizeof line, "Wavetable %d/%d",
+             s_folder_count ? s_browse_sel + 1 : 0, s_folder_count);
+    Paint_DrawString_EN(2, 0, line, &Font12, BG_LEVEL, FG_LEVEL);
+
+    if (s_folder_count == 0) {
+        draw_centered(56, "no wavetables", &Font12, FG_LEVEL, BG_LEVEL);
+        return;
+    }
+
+    int top = s_browse_sel - BROWSE_ROWS / 2;
+    if (top > s_folder_count - BROWSE_ROWS) top = s_folder_count - BROWSE_ROWS;
+    if (top < 0) top = 0;
+
+    for (int i = 0; i < BROWSE_ROWS && top + i < s_folder_count; i++) {
+        int idx = top + i;
+        int y = 14 + i * 14;
+        snprintf(line, sizeof line, "%.18s", s_folders[idx]);
+        if (idx == s_browse_sel) {
+            Paint_DrawRectangle(0, y - 1, 127, y + 12, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+            Paint_DrawString_EN(2, y, line, &Font12, BG_LEVEL, FG_LEVEL);
+        } else {
+            Paint_DrawString_EN(2, y, line, &Font12, FG_LEVEL, BG_LEVEL);
+        }
+    }
 }
 
 void app_init(void)
@@ -289,6 +414,11 @@ void app_init(void)
     arp_set_clock(ARP_CLK_INTERNAL);
     arp_set_bpm(120);
     arp_set_enabled(false);
+
+    /* Output level + point the oscillator at the wavetable preloaded by
+     * app_preload() (loaded before audio started). */
+    wt_osc_set_level((float)s_level_pct / 100.0f);
+    if (s_wt_loaded) wt_osc_set_multisample(&s_active_ms);
 }
 
 void app_tick(void)
@@ -362,21 +492,61 @@ void app_tick(void)
         arp_render();
         break;
 
-    case APP_SCREEN_PLAYBACK:
-        if (ev == ENC_BTN_LONG_PRESS) {
-            s_screen = APP_SCREEN_MENU;
-        }
-        render_stub("Playback");
-        break;
-
     case APP_SCREEN_CV:
         if (ev == ENC_BTN_LONG_PRESS) {
             s_screen = APP_SCREEN_MENU;
             wt_osc_gate_off();          /* stop the free-run voice */
         } else {
-            cv_vco_update();            /* track CV-IN-A -> pitch */
+            if (ev == ENC_BTN_SHORT_PRESS)     /* toggle CV-IN-A / CV-IN-B */
+                s_cv_src = (s_cv_src == ANALOG_CV_A) ? ANALOG_CV_B : ANALOG_CV_A;
+            cv_vco_update();            /* track the selected CV input -> pitch */
             render_cv();
         }
+        break;
+
+    case APP_SCREEN_AUDIO:
+        if (ev == ENC_BTN_LONG_PRESS) {
+            if (s_audio_editing) s_audio_editing = false;   /* leave edit first */
+            else s_screen = APP_SCREEN_MENU;
+        } else if (ev == ENC_BTN_SHORT_PRESS) {
+            if (s_audio_cursor == 0) {
+                enter_browser();                            /* Wavetable -> browse */
+            } else {
+                s_audio_editing = !s_audio_editing;         /* Level -> edit toggle */
+            }
+        } else if (detents) {
+            if (s_audio_editing) {                          /* adjust level value */
+                int v = s_level_pct + (int)detents * 5;
+                if (v < 0)   v = 0;
+                if (v > 100) v = 100;
+                s_level_pct = v;
+                wt_osc_set_level((float)v / 100.0f);
+            } else {                                        /* move the row cursor */
+                int c = s_audio_cursor + (int)detents;
+                if (c < 0) c = 0;
+                if (c > AUDIO_ROWS - 1) c = AUDIO_ROWS - 1;
+                s_audio_cursor = c;
+            }
+        }
+        render_audio_cfg();
+        break;
+
+    case APP_SCREEN_BROWSE:
+        if (ev == ENC_BTN_LONG_PRESS) {
+            s_screen = APP_SCREEN_AUDIO;           /* cancel */
+        } else if (ev == ENC_BTN_SHORT_PRESS) {
+            if (s_folder_count > 0) {
+                app_load_wavetable(s_folders[s_browse_sel]);
+                printf("WT load: %s (%s)\r\n", s_cur_wt, s_wt_loaded ? "ok" : "FAIL");
+            }
+            s_screen = APP_SCREEN_AUDIO;
+        } else if (detents && s_folder_count > 0) {
+            int v = s_browse_sel + (int)detents;
+            if (v < 0) v = 0;
+            if (v >= s_folder_count) v = s_folder_count - 1;
+            s_browse_sel = v;
+        }
+        render_browse();
         break;
     }
 
