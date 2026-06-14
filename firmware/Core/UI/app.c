@@ -48,42 +48,51 @@ static float note_cv_st(int st)
     return CV_OCTAVE_BASE + (float)st / 12.0f;
 }
 
-static float note_freq(int idx) { return note_freq_st(cof_semitone(idx)); }
-static float note_cv(int idx)   { return note_cv_st(cof_semitone(idx)); }
-
-/* CV VCO free-run: oscillator pitch tracks CV-IN-A at 1 V/oct, 0 V = C3.
+/* CV VCO free-run: oscillator pitch tracks CV-IN at 1 V/oct, 0 V = C3.
  * CV-IN is a modulation input (uncalibrated, ~1.6 kHz filtered, see
  * cv-input.md), so the CV-derived pitch is QUANTIZED to the nearest semitone —
  * the imprecision snaps to clean in-tune notes instead of a detuned glide. */
 #define CV_VCO_BASE_MIDI   48        /* C3 at 0 V */
 
-/* Operating modes, in menu order. APP_SCREEN_BROWSE is not a menu item — it is
- * reached from the Audio Cfg screen. */
+/* Screens. The first three menu items are persistent MODES (pitch source x
+ * engine); the last two are config screens that don't change the running mode.
+ * APP_SCREEN_BROWSE is reached from Audio Cfg, not the menu. */
 typedef enum {
     APP_SCREEN_MENU = 0,
-    APP_SCREEN_KEY_SELECT,
-    APP_SCREEN_ARP,
-    APP_SCREEN_CV,
-    APP_SCREEN_AUDIO,
-    APP_SCREEN_BROWSE,
+    APP_SCREEN_CV_VCO,    /* mode #1: CV  -> Direct */
+    APP_SCREEN_CV_ARP,    /* mode #2: CV  -> Arp    */
+    APP_SCREEN_KEY_ARP,   /* mode #3: wheel -> Arp  */
+    APP_SCREEN_ARP_CFG,   /* config */
+    APP_SCREEN_AUDIO,     /* config */
+    APP_SCREEN_BROWSE,    /* from Audio Cfg */
 } AppScreen;
 
-/* Menu item indices map to the screens above (offset by one: index 0 -> the
- * first non-menu screen). Keep the labels in sync with that mapping. */
+/* Menu index -> screen is offset by one (index 0 -> first non-menu screen). */
 static const char *const k_mode_items[] = {
-    "Key Select",
-    "Arp",
     "CV VCO",
+    "CV Arp",
+    "Key Arp",
+    "Arp Cfg",
     "Audio Cfg",
 };
 #define MODE_COUNT  (sizeof(k_mode_items) / sizeof(k_mode_items[0]))
 
-static AppScreen s_screen;
-static Menu      s_menu;
-static float     s_key_angle;     /* circle-of-fifths rotation, degrees */
-static uint8_t   s_marked[12];    /* per-note mark flags */
-static uint32_t  s_tone_off;      /* HAL tick to silence the current tone (0 = none) */
-static int       s_root_semitone; /* chromatic root for pitch mapping (live) */
+/* Persistent operating mode = (pitch source x engine), decoupled from the
+ * on-screen view: the engine runs every loop regardless of which screen is up,
+ * and keeps running when you back out to the menu / open a config screen. */
+typedef enum { SRC_CV = 0, SRC_WHEEL } pitch_src_t;
+typedef enum { ENG_DIRECT = 0, ENG_ARP } engine_t;
+
+static AppScreen   s_screen;
+static Menu        s_menu;
+static bool        s_mode_active;   /* false at boot -> silent until a mode is picked */
+static pitch_src_t s_src;
+static engine_t    s_engine;
+static int         s_eng_last_root = -1;  /* Direct engine: gate on note change */
+static float       s_key_angle;     /* circle-of-fifths rotation, degrees */
+static uint8_t     s_marked[12];    /* per-note marks (future chord def; unused in P1) */
+static uint32_t    s_tone_off;      /* HAL tick to silence the current arp note (0 = none) */
+static int         s_root_semitone; /* chromatic root for pitch mapping (live) */
 
 /* ---- active wavetable + SD folder browser ---- */
 #define WT_MAX_FOLDERS   160
@@ -152,39 +161,23 @@ static void arp_step_cb(int semitone, uint32_t gate_ms, void *ctx)
     s_tone_off = HAL_GetTick() + gate_ms;
 }
 
-/* ---- Key Select preview (only used while the arp is off) ---- */
-
-static void key_preview(int idx)
-{
-    cv_out_write_volts(CV_OUT_A, note_cv(idx));
-    wt_osc_note(60 + cof_semitone(idx), note_freq(idx));
-    gate_out_pulse(GATE_A, PREVIEW_MS);
-    gate_out_pulse(GATE_B, PREVIEW_MS);
-    s_tone_off = HAL_GetTick() + PREVIEW_MS;
-    printf("KEY pitch: idx=%d st=%d cv=%.3fV %.1fHz\r\n",
-           idx, cof_semitone(idx), note_cv(idx), note_freq(idx));
-}
-
 /* ---- Arp settings screen ---- */
 
 typedef enum {
-    AP_ENABLED = 0, AP_DIR, AP_OCT, AP_LEN, AP_CLK, AP_TEMPO, AP_COUNT
+    AP_DIR = 0, AP_OCT, AP_LEN, AP_CLK, AP_TEMPO, AP_COUNT
 } arp_param_t;
 
 static int  s_arp_cursor;
 static bool s_arp_editing;   /* rotation edits the cursored param's value */
 
 static const char *const arp_names[AP_COUNT] = {
-    "Enable", "Dir", "Octave", "Length", "Clock", "Tempo",
+    "Dir", "Octave", "Length", "Clock", "Tempo",
 };
 
 /* Adjust the parameter at the cursor by the encoder delta. */
 static void arp_param_adjust(arp_param_t p, int32_t d)
 {
     switch (p) {
-    case AP_ENABLED:
-        arp_set_enabled(!arp_enabled());
-        break;
     case AP_DIR: {
         int v = ((int)arp_dir() + (int)d) % ARP_DIR_COUNT;
         if (v < 0) v += ARP_DIR_COUNT;
@@ -228,7 +221,6 @@ static void arp_value_str(arp_param_t p, char *b, int n)
 {
     static const char *const dirs[ARP_DIR_COUNT] = { "Up", "Down", "UpDn", "Rand" };
     switch (p) {
-    case AP_ENABLED: snprintf(b, n, "%s", arp_enabled() ? "On" : "Off"); break;
     case AP_DIR:     snprintf(b, n, "%s", dirs[arp_dir()]); break;
     case AP_OCT:     snprintf(b, n, "%u", arp_octaves()); break;
     case AP_LEN:     snprintf(b, n, "%u", arp_length()); break;
@@ -296,10 +288,10 @@ static const char *const k_note_names[12] = {
 static int   s_cv_midi = -1;   /* current quantized MIDI note (-1 = unset) */
 static uint8_t s_cv_src = ANALOG_CV_A;   /* CV VCO input: CV-IN-A or CV-IN-B */
 
-/* Read CV-IN-A (1 V/oct, 0 V = C3), quantize to the nearest semitone (with a
- * little hysteresis so noise near a step boundary doesn't flutter between
- * notes), and drive the free-run oscillator at the exact note frequency. */
-static void cv_vco_update(void)
+/* Quantize the selected CV input (1 V/oct, 0 V = C3) to the nearest semitone,
+ * with hysteresis so noise near a step boundary doesn't flutter. Updates and
+ * returns the current MIDI note (also shown on the CV screens). */
+static int cv_quantized_root(void)
 {
     float v = analog_in_cv_volts(s_cv_src);
     float midi_f = (float)CV_VCO_BASE_MIDI + v * 12.0f;
@@ -308,9 +300,49 @@ static void cv_vco_update(void)
         s_cv_midi = (int)lroundf(midi_f);
     if (s_cv_midi < 0)   s_cv_midi = 0;
     if (s_cv_midi > 127) s_cv_midi = 127;
+    return s_cv_midi;
+}
 
-    float freq = 440.0f * powf(2.0f, (float)(s_cv_midi - 69) / 12.0f);
-    wt_osc_set_pitch(s_cv_midi, freq);
+static float midi_freq(int m)
+{
+    return 440.0f * powf(2.0f, (float)(m - 69) / 12.0f);
+}
+
+/* Select a persistent mode (from the menu). */
+static void set_mode(pitch_src_t src, engine_t eng)
+{
+    s_src = src;
+    s_engine = eng;
+    s_mode_active = true;
+    s_eng_last_root = -1;
+    s_tone_off = 0;
+    arp_set_enabled(eng == ENG_ARP);
+    wt_osc_all_off();          /* clean start; the engine re-activates the voice */
+}
+
+/* Note-generation core — runs every loop while a mode is active, regardless of
+ * the on-screen view. Computes the root from the source and drives the engine.
+ * For the Arp engine the arp runs in app_tick (arp_tick); here we only feed it
+ * the live root. */
+static void engine_tick(void)
+{
+    if (!s_mode_active) return;
+
+    int root = (s_src == SRC_CV) ? cv_quantized_root() : (60 + s_root_semitone);
+
+    if (s_engine == ENG_ARP) {
+        if (s_src == SRC_CV) s_root_semitone = root - 60;   /* CV transposes the arp */
+        return;
+    }
+
+    /* Direct: play the root continuously, pass it to CV-OUT, gate on change. */
+    wt_osc_set_pitch(root, midi_freq(root));
+    cv_out_write_volts(CV_OUT_A, note_cv_st(root - 60));
+    if (root != s_eng_last_root) {
+        gate_out_pulse(GATE_A, PREVIEW_MS);
+        gate_out_pulse(GATE_B, PREVIEW_MS);
+        s_eng_last_root = root;
+    }
 }
 
 static void render_cv(void)
@@ -318,12 +350,14 @@ static void render_cv(void)
     char line[24];
     Paint_Clear(BG_LEVEL);
     Paint_DrawRectangle(0, 0, 127, 14, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    snprintf(line, sizeof line, "CV VCO   in: %c",
+    snprintf(line, sizeof line, "%s  in:%c",
+             s_engine == ENG_ARP ? "CV Arp" : "CV VCO",
              s_cv_src == ANALOG_CV_B ? 'B' : 'A');
     Paint_DrawString_EN(4, 1, line, &Font12, BG_LEVEL, FG_LEVEL);
 
     if (s_cv_midi >= 0) {
-        /* Note + octave is the whole point — big and centered. */
+        /* The root note + octave, big and centered (the played note in VCO; the
+         * arp's root in Arp). */
         snprintf(line, sizeof line, "%s%d", k_note_names[s_cv_midi % 12],
                  s_cv_midi / 12 - 1);
         draw_centered(44, line, &Font24, FG_LEVEL, BG_LEVEL);
@@ -405,6 +439,9 @@ void app_init(void)
 
     s_screen = APP_SCREEN_MENU;
     menu_init(&s_menu, k_mode_items, (uint8_t)MODE_COUNT);
+    s_mode_active = false;        /* silent until a mode is selected */
+    s_eng_last_root = -1;
+    s_cv_midi = -1;
     s_key_angle = 0.0f;
     for (int i = 0; i < 12; i++) s_marked[i] = 0;
     s_tone_off = 0;
@@ -432,7 +469,10 @@ void app_tick(void)
     int32_t  detents = encoder_get_delta();
     encoder_btn_event_t ev = encoder_get_button_event();
 
-    /* Arpeggiator runs globally whenever enabled. */
+    /* Note-generation core: feed the arp root (Arp) or drive the voice (Direct). */
+    engine_tick();
+
+    /* Arp runs while the active engine is Arp (arp_enabled set via set_mode). */
     if (arp_enabled()) {
         arp_tick(now);
         if (arp_clock() == ARP_CLK_EXTERNAL && clock_in_edge())
@@ -441,58 +481,53 @@ void app_tick(void)
 
     switch (s_screen) {
     case APP_SCREEN_MENU:
-        if (detents) {
-            menu_move(&s_menu, detents);
-        }
+        if (detents) menu_move(&s_menu, detents);
         if (ev == ENC_BTN_SHORT_PRESS) {
-            s_screen = (AppScreen)(APP_SCREEN_KEY_SELECT + s_menu.selected);
-            if (s_screen == APP_SCREEN_KEY_SELECT) {
-                int idx = centered_note_index();
-                s_root_semitone = cof_semitone(idx);
-                if (!arp_enabled()) key_preview(idx);
+            s_screen = (AppScreen)(APP_SCREEN_CV_VCO + s_menu.selected);
+            switch (s_screen) {
+            case APP_SCREEN_CV_VCO:  set_mode(SRC_CV, ENG_DIRECT); break;
+            case APP_SCREEN_CV_ARP:  set_mode(SRC_CV, ENG_ARP);    break;
+            case APP_SCREEN_KEY_ARP:
+                s_root_semitone = cof_semitone(centered_note_index());
+                set_mode(SRC_WHEEL, ENG_ARP);
+                break;
+            default: break;   /* Arp Cfg / Audio Cfg: config only, mode unchanged */
             }
             printf("MENU select: %s\r\n", k_mode_items[s_menu.selected]);
         }
         menu_render(&s_menu);
         break;
 
-    case APP_SCREEN_KEY_SELECT: {
-        int idx_before = centered_note_index();
-        if (detents) {
+    case APP_SCREEN_CV_VCO:
+    case APP_SCREEN_CV_ARP:
+        if (ev == ENC_BTN_LONG_PRESS) {
+            s_screen = APP_SCREEN_MENU;            /* mode persists, keeps sounding */
+        } else if (ev == ENC_BTN_SHORT_PRESS) {   /* toggle CV-IN-A / CV-IN-B */
+            s_cv_src = (s_cv_src == ANALOG_CV_A) ? ANALOG_CV_B : ANALOG_CV_A;
+        }
+        render_cv();
+        break;
+
+    case APP_SCREEN_KEY_ARP:
+        if (ev == ENC_BTN_LONG_PRESS) {
+            s_screen = APP_SCREEN_MENU;            /* mode persists, keeps sounding */
+        } else if (detents) {
             s_key_angle += (float)detents * 30.0f;
             while (s_key_angle < 0.0f)    s_key_angle += 360.0f;
             while (s_key_angle >= 360.0f) s_key_angle -= 360.0f;
+            s_root_semitone = cof_semitone(centered_note_index());
         }
-        int idx = centered_note_index();
-
-        if (ev == ENC_BTN_SHORT_PRESS) {
-            /* Toggle the centered note's mark (note at top = angle 0). */
-            s_marked[idx] = !s_marked[idx];
-            printf("KEY mark toggle: idx=%d marked=%u\r\n", idx, s_marked[idx]);
-        } else if (ev == ENC_BTN_LONG_PRESS) {
-            s_screen = APP_SCREEN_MENU;
-            printf("KEY -> menu\r\n");
-        }
-
-        /* Key changed: track the root (transposes a running arp) and, if the
-         * arp is off, sound the one-shot preview. */
-        if (s_screen == APP_SCREEN_KEY_SELECT && idx != idx_before) {
-            s_root_semitone = cof_semitone(idx);
-            if (!arp_enabled()) key_preview(idx);
-        }
-
         cof_render_angle(s_key_angle, s_marked);
         break;
-    }
 
-    case APP_SCREEN_ARP:
+    case APP_SCREEN_ARP_CFG:
         if (ev == ENC_BTN_LONG_PRESS) {
             if (s_arp_editing) s_arp_editing = false;   /* leave edit first */
             else s_screen = APP_SCREEN_MENU;
         } else if (ev == ENC_BTN_SHORT_PRESS) {
             if (s_arp_editing) {
                 s_arp_editing = false;                  /* confirm value */
-            } else if (s_arp_cursor == AP_ENABLED || s_arp_cursor == AP_CLK) {
+            } else if (s_arp_cursor == AP_CLK) {
                 arp_param_adjust((arp_param_t)s_arp_cursor, 1);  /* toggle in place */
             } else {
                 s_arp_editing = true;                   /* edit value param */
@@ -507,18 +542,6 @@ void app_tick(void)
             }
         }
         arp_render();
-        break;
-
-    case APP_SCREEN_CV:
-        if (ev == ENC_BTN_LONG_PRESS) {
-            s_screen = APP_SCREEN_MENU;
-            wt_osc_gate_off();          /* stop the free-run voice */
-        } else {
-            if (ev == ENC_BTN_SHORT_PRESS)     /* toggle CV-IN-A / CV-IN-B */
-                s_cv_src = (s_cv_src == ANALOG_CV_A) ? ANALOG_CV_B : ANALOG_CV_A;
-            cv_vco_update();            /* track the selected CV input -> pitch */
-            render_cv();
-        }
         break;
 
     case APP_SCREEN_AUDIO:
@@ -567,15 +590,11 @@ void app_tick(void)
         break;
     }
 
-    /* Central audio control. CV VCO sounds continuously; otherwise sound while
-     * the arp runs or in Key Select (previews), and end elapsed tones. */
-    if (s_screen == APP_SCREEN_CV) {
-        audio_mute(false);
-    } else {
-        audio_mute(!(arp_enabled() || s_screen == APP_SCREEN_KEY_SELECT));
-        if (s_tone_off && (int32_t)(now - s_tone_off) >= 0) {
-            wt_osc_gate_off();
-            s_tone_off = 0;
-        }
+    /* Audio is on whenever a mode is active; the s_tone_off window gives the arp
+     * its per-step gate (the Direct engine holds its note continuously). */
+    audio_mute(!s_mode_active);
+    if (s_tone_off && (int32_t)(now - s_tone_off) >= 0) {
+        wt_osc_gate_off();
+        s_tone_off = 0;
     }
 }

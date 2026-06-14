@@ -196,3 +196,20 @@ harmony quickly). Exact split to be finalised while prototyping the editor.
    mono PCM5102A path (the oscillator and `audio.c` render are mono today).
 6. **CV-OUT range/tuning** for very low/high arp notes (clamp to the DAC range).
 7. **Default / power-on mode** and whether the last mode is persisted.
+
+---
+
+## 11. Known issues
+
+- **CV-IN flutters between C3 and B2 when the jack is unplugged.** Unplugged,
+  the switched jack normals the input to ~0 V, which *should* quantize to a
+  steady C3 (midi 48). But the CV-IN is uncalibrated and `cv-input.md` notes a
+  zero-offset of ~50 mV referred to the input ≈ **0.6 semitone** — enough to sit
+  the idle reading on the **B/C step boundary (midi 47.5)**, where ADC noise
+  tips it across. The quantizer's 0.6-semitone hysteresis isn't enough at the
+  boundary, and the software average was removed (P1/CV-VCO) to kill the
+  glissando, so nothing damps it. **Fix directions:** calibrate the per-channel
+  CV-IN zero-offset (store the constant per `cv-input.md`/`calibration.md`) so
+  0 V reads exactly midi 48; and/or widen the deadband / add a slow idle filter
+  that only engages when the input is near a step centre. Low priority — only
+  affects an *unpatched* CV input.
