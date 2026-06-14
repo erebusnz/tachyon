@@ -53,7 +53,14 @@ static float zone_inc(const ms_zone_t *z, float freq_hz)
 }
 
 /* DMA-IRQ render: sum every active voice (each a single-cycle table walked with
- * linear interp), scaled so a chord stays near a single voice's loudness. */
+ * linear interp), scaled so a chord stays near a single voice's loudness.
+ *
+ * Force-optimized even in -O0 Debug builds: this runs in the I2S DMA IRQ and
+ * must fill a half-buffer within the audio deadline (HALF_FRAMES / AUDIO_FS_HZ ≈
+ * 667 µs at ~192 kHz). At -O0 the 4-voice float loop overruns that deadline,
+ * which makes the DMA lap the CPU — the IRQ then re-fires back-to-back and
+ * starves the main loop (frozen UI + stuck audio buffer). */
+__attribute__((optimize("O3")))
 static void wt_render(int32_t *stereo, uint32_t n, void *ctx)
 {
     (void)ctx;

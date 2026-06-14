@@ -10,8 +10,8 @@
 #include "gate_out.h"
 #include "clock_in.h"
 #include "arp.h"
-#include "analog_in.h"
 #include "multisample.h"
+#include "usbd_midi.h"
 #include "sd_fs.h"
 #include <math.h>
 #include <string.h>
@@ -29,7 +29,6 @@
  * 1 V/oct CV on CV-OUT-A and an audible tone; the arpeggiator works in absolute
  * semitones (root + chord offset + octave) via the _st helpers.
  */
-#define PREVIEW_MS       250          /* one-shot key-preview blip length */
 #define PREVIEW_C_HZ     261.6256f    /* C4 — tone reference octave */
 #define CV_OCTAVE_BASE   3.0f         /* volts at semitone 0 (mid of the 0–10 V range) */
 
@@ -48,39 +47,37 @@ static float note_cv_st(int st)
     return CV_OCTAVE_BASE + (float)st / 12.0f;
 }
 
-/* CV VCO free-run: oscillator pitch tracks CV-IN at 1 V/oct, 0 V = C3.
- * CV-IN is a modulation input (uncalibrated, ~1.6 kHz filtered, see
- * cv-input.md), so the CV-derived pitch is QUANTIZED to the nearest semitone —
- * the imprecision snaps to clean in-tune notes instead of a detuned glide. */
-#define CV_VCO_BASE_MIDI   48        /* C3 at 0 V */
-
-/* Screens. The first three menu items are persistent MODES (pitch source x
- * engine); the last two are config screens that don't change the running mode.
+/* Screens. The first menu items are persistent MODES (pitch source x engine);
+ * "Config" opens config screens that don't change the running mode.
  * APP_SCREEN_BROWSE is reached from Audio Cfg, not the menu. */
 typedef enum {
     APP_SCREEN_MENU = 0,
-    APP_SCREEN_CV_VCO,    /* mode #1: CV  -> Direct */
-    APP_SCREEN_CV_ARP,    /* mode #2: CV  -> Arp    */
-    APP_SCREEN_KEY_ARP,   /* mode #3: wheel -> Arp  */
+    APP_SCREEN_KEY_ARP,   /* mode: key wheel   -> Arp         */
+    APP_SCREEN_CHORD_ARP, /* mode: chord wheel -> Arp         */
+    APP_SCREEN_USB_MIDI,  /* mode: USB MIDI    -> Direct poly */
+    APP_SCREEN_CONFIG,    /* Config submenu (Arp / Audio)  */
     APP_SCREEN_ARP_CFG,   /* config */
     APP_SCREEN_AUDIO,     /* config */
     APP_SCREEN_BROWSE,    /* from Audio Cfg */
 } AppScreen;
 
-/* Menu index -> screen is offset by one (index 0 -> first non-menu screen). */
+/* Menu mode index i selects screen APP_SCREEN_FIRST_MODE + i. */
+#define APP_SCREEN_FIRST_MODE  APP_SCREEN_KEY_ARP
+
+/* Top menu: the play modes (index 0..N_MODES-1) then "Config" (a submenu). */
+#define N_MODES  3
 static const char *const k_mode_items[] = {
-    "CV VCO",
-    "CV Arp",
     "Key Arp",
-    "Arp Cfg",
-    "Audio Cfg",
+    "Chord Arp",
+    "USB MIDI",
+    "Config",
 };
 #define MODE_COUNT  (sizeof(k_mode_items) / sizeof(k_mode_items[0]))
 
 /* Persistent operating mode = (pitch source x engine), decoupled from the
  * on-screen view: the engine runs every loop regardless of which screen is up,
  * and keeps running when you back out to the menu / open a config screen. */
-typedef enum { SRC_CV = 0, SRC_WHEEL } pitch_src_t;
+typedef enum { SRC_WHEEL = 0, SRC_CHORD, SRC_MIDI } pitch_src_t;
 typedef enum { ENG_DIRECT = 0, ENG_ARP } engine_t;
 
 static AppScreen   s_screen;
@@ -88,11 +85,20 @@ static Menu        s_menu;
 static bool        s_mode_active;   /* false at boot -> silent until a mode is picked */
 static pitch_src_t s_src;
 static engine_t    s_engine;
-static int         s_eng_last_root = -1;  /* Direct engine: gate on note change */
 static float       s_key_angle;     /* circle-of-fifths rotation, degrees */
 static uint8_t     s_marked[12];    /* per-note marks (future chord def; unused in P1) */
 static uint32_t    s_tone_off;      /* HAL tick to silence the current arp note (0 = none) */
-static int         s_root_semitone; /* chromatic root for pitch mapping (live) */
+static int         s_root_semitone; /* chromatic root the arp/Direct plays (live) */
+
+/* Key context (set on the Key Arp wheel, shared with the Chord wheel). */
+static int  s_key_tonic = 0;        /* tonic, chromatic 0..11 */
+static bool s_key_major = true;     /* key quality: major or (natural) minor */
+
+/* The key's seven diatonic triads, ordered by circle-of-fifths position
+ * (IV I V ii vi iii vii deg) for the chord wheel. */
+typedef struct { uint8_t cof_pos; uint8_t root; uint8_t quality; } chordinfo_t; /* quality 0=maj 1=min 2=dim */
+static chordinfo_t s_chords[7];
+static int s_chord_sel;             /* selected diatonic chord 0..6 */
 
 /* ---- active wavetable + SD folder browser ---- */
 #define WT_MAX_FOLDERS   160
@@ -108,6 +114,7 @@ static int   s_browse_sel;
 static int   s_audio_cursor;    /* Audio Cfg row: 0=Wavetable, 1=Level */
 static bool  s_audio_editing;   /* Audio Cfg: rotation edits Level value */
 #define AUDIO_ROWS  2
+static int   s_config_sel;      /* Config submenu row: 0=Arp, 1=Audio */
 
 /* SD read of wavetable folder `name` into the active multisample. No oscillator
  * calls — pure data load. Returns true on success. */
@@ -279,33 +286,93 @@ static void draw_row(int y, const char *s, int selected)
     }
 }
 
-/* ---- CV VCO free-run screen ---- */
-
 static const char *const k_note_names[12] = {
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
 };
 
-static int   s_cv_midi = -1;   /* current quantized MIDI note (-1 = unset) */
-static uint8_t s_cv_src = ANALOG_CV_A;   /* CV VCO input: CV-IN-A or CV-IN-B */
-
-/* Quantize the selected CV input (1 V/oct, 0 V = C3) to the nearest semitone,
- * with hysteresis so noise near a step boundary doesn't flutter. Updates and
- * returns the current MIDI note (also shown on the CV screens). */
-static int cv_quantized_root(void)
-{
-    float v = analog_in_cv_volts(s_cv_src);
-    float midi_f = (float)CV_VCO_BASE_MIDI + v * 12.0f;
-
-    if (s_cv_midi < 0 || fabsf(midi_f - (float)s_cv_midi) > 0.6f)
-        s_cv_midi = (int)lroundf(midi_f);
-    if (s_cv_midi < 0)   s_cv_midi = 0;
-    if (s_cv_midi > 127) s_cv_midi = 127;
-    return s_cv_midi;
-}
-
 static float midi_freq(int m)
 {
     return 440.0f * powf(2.0f, (float)(m - 69) / 12.0f);
+}
+
+/* ---- USB-MIDI input: lock-free event ring + poly-voice routing ----
+ *
+ * The USB-MIDI device class (usbd_midi.c, added later) parses note events in
+ * the OTG IRQ and calls app_midi_event() — a single-producer/single-consumer
+ * push. The events are drained here on the main loop (midi_drain in app_tick)
+ * and routed to the polyphonic voice pool while the USB MIDI mode is active, so
+ * the oscillator's critical section is never entered from IRQ context. */
+
+#define MIDI_RING_LEN 64                 /* power of two */
+typedef struct { uint8_t kind, note, vel; } midi_evt_t;
+static volatile midi_evt_t s_midi_ring[MIDI_RING_LEN];
+static volatile uint8_t s_midi_head;     /* producer: USB IRQ */
+static volatile uint8_t s_midi_tail;     /* consumer: main loop */
+
+static uint8_t s_midi_held[16];          /* bitmap of currently-held notes */
+static int     s_midi_held_n;            /* popcount of s_midi_held */
+static int     s_midi_last = -1;         /* last note-on (for the screen) */
+
+void app_midi_event(uint8_t kind, uint8_t note, uint8_t vel)
+{
+    uint8_t h = s_midi_head;
+    uint8_t next = (uint8_t)((h + 1u) & (MIDI_RING_LEN - 1u));
+    if (next == s_midi_tail) return;     /* ring full — drop the event */
+    s_midi_ring[h].kind = kind;
+    s_midi_ring[h].note = note;
+    s_midi_ring[h].vel  = vel;
+    __DMB();                             /* publish the slot before the index */
+    s_midi_head = next;
+}
+
+static bool midi_evt_pop(midi_evt_t *e)
+{
+    if (s_midi_tail == s_midi_head) return false;
+    *e = s_midi_ring[s_midi_tail];
+    s_midi_tail = (uint8_t)((s_midi_tail + 1u) & (MIDI_RING_LEN - 1u));
+    return true;
+}
+
+/* Forget all held notes (mode change / panic). */
+static void midi_reset(void)
+{
+    for (int i = 0; i < 16; i++) s_midi_held[i] = 0;
+    s_midi_held_n = 0;
+    s_midi_last = -1;
+}
+
+/* Route one drained event to the voice pool — gated to the USB MIDI mode so
+ * stale notes never leak into another mode. Velocity is ignored for now
+ * (wt_osc exposes only a master level; see usb-midi.md §5). */
+static void midi_note_on(uint8_t note, uint8_t vel)
+{
+    (void)vel;
+    if (!s_mode_active || s_src != SRC_MIDI || note > 127) return;
+    if (!(s_midi_held[note >> 3] & (1u << (note & 7)))) {
+        s_midi_held[note >> 3] |= (uint8_t)(1u << (note & 7));
+        s_midi_held_n++;
+    }
+    s_midi_last = note;
+    wt_osc_note_on((int)note, midi_freq((int)note));
+}
+
+static void midi_note_off(uint8_t note)
+{
+    if (!s_mode_active || s_src != SRC_MIDI || note > 127) return;
+    if (s_midi_held[note >> 3] & (1u << (note & 7))) {
+        s_midi_held[note >> 3] &= (uint8_t)~(1u << (note & 7));
+        if (s_midi_held_n > 0) s_midi_held_n--;
+    }
+    wt_osc_note_off((int)note);
+}
+
+static void midi_drain(void)
+{
+    midi_evt_t e;
+    while (midi_evt_pop(&e)) {
+        if (e.kind == APP_MIDI_NOTE_ON) midi_note_on(e.note, e.vel);
+        else                            midi_note_off(e.note);
+    }
 }
 
 /* Select a persistent mode (from the menu). */
@@ -314,56 +381,107 @@ static void set_mode(pitch_src_t src, engine_t eng)
     s_src = src;
     s_engine = eng;
     s_mode_active = true;
-    s_eng_last_root = -1;
     s_tone_off = 0;
+    midi_reset();
     arp_set_enabled(eng == ENG_ARP);
     wt_osc_all_off();          /* clean start; the engine re-activates the voice */
 }
 
-/* Note-generation core — runs every loop while a mode is active, regardless of
- * the on-screen view. Computes the root from the source and drives the engine.
- * For the Arp engine the arp runs in app_tick (arp_tick); here we only feed it
- * the live root. */
-static void engine_tick(void)
-{
-    if (!s_mode_active) return;
-
-    int root = (s_src == SRC_CV) ? cv_quantized_root() : (60 + s_root_semitone);
-
-    if (s_engine == ENG_ARP) {
-        if (s_src == SRC_CV) s_root_semitone = root - 60;   /* CV transposes the arp */
-        return;
-    }
-
-    /* Direct: play the root continuously, pass it to CV-OUT, gate on change. */
-    wt_osc_set_pitch(root, midi_freq(root));
-    cv_out_write_volts(CV_OUT_A, note_cv_st(root - 60));
-    if (root != s_eng_last_root) {
-        gate_out_pulse(GATE_A, PREVIEW_MS);
-        gate_out_pulse(GATE_B, PREVIEW_MS);
-        s_eng_last_root = root;
-    }
-}
-
-static void render_cv(void)
+static void render_usb_midi(void)
 {
     char line[24];
     Paint_Clear(BG_LEVEL);
     Paint_DrawRectangle(0, 0, 127, 14, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-    snprintf(line, sizeof line, "%s  in:%c",
-             s_engine == ENG_ARP ? "CV Arp" : "CV VCO",
-             s_cv_src == ANALOG_CV_B ? 'B' : 'A');
-    Paint_DrawString_EN(4, 1, line, &Font12, BG_LEVEL, FG_LEVEL);
+    Paint_DrawString_EN(4, 1, "USB MIDI", &Font12, BG_LEVEL, FG_LEVEL);
 
-    if (s_cv_midi >= 0) {
-        /* The root note + octave, big and centered (the played note in VCO; the
-         * arp's root in Arp). */
-        snprintf(line, sizeof line, "%s%d", k_note_names[s_cv_midi % 12],
-                 s_cv_midi / 12 - 1);
-        draw_centered(44, line, &Font24, FG_LEVEL, BG_LEVEL);
+    if (!USBD_MIDI_IsConnected()) {
+        draw_centered(50, "waiting for host", &Font12, FG_LEVEL, BG_LEVEL);
+    } else if (s_midi_held_n > 0 && s_midi_last >= 0) {
+        snprintf(line, sizeof line, "%s%d",
+                 k_note_names[s_midi_last % 12], s_midi_last / 12 - 1);
+        draw_centered(40, line, &Font24, FG_LEVEL, BG_LEVEL);
+        snprintf(line, sizeof line, "%d held", s_midi_held_n);
+        draw_centered(82, line, &Font12, FG_LEVEL, BG_LEVEL);
+    } else {
+        draw_centered(50, "connected", &Font12, FG_LEVEL, BG_LEVEL);
     }
-    draw_centered(86, "push = A/B", &Font12, FG_LEVEL, BG_LEVEL);
-    draw_centered(104, "hold = back", &Font12, FG_LEVEL, BG_LEVEL);
+    draw_centered(104, "push = all-off", &Font12, FG_LEVEL, BG_LEVEL);
+    draw_centered(116, "hold = back", &Font12, FG_LEVEL, BG_LEVEL);
+}
+
+/* ---- Key / chord wheel ---- */
+
+static void arp_use_triad(int quality)   /* 0=maj 1=min 2=dim */
+{
+    static const uint8_t maj[3] = { 0, 4, 7 };
+    static const uint8_t min[3] = { 0, 3, 7 };
+    static const uint8_t dim[3] = { 0, 3, 6 };
+    if (quality == 1)      arp_set_chord(min, 3);
+    else if (quality == 2) arp_set_chord(dim, 3);
+    else                   arp_set_chord(maj, 3);
+}
+
+/* Key Arp: the arp plays the tonic triad of the selected key. */
+static void key_arp_apply(void)
+{
+    s_root_semitone = s_key_tonic;
+    arp_use_triad(s_key_major ? 0 : 1);
+}
+
+/* Build the key's seven diatonic triads, ordered by circle-of-fifths position.
+ * The chord set is the same for relative major/minor; only the home tonic
+ * differs. In COF order from (relative-major tonic - 1): IV I V ii vi iii vii,
+ * qualities maj maj maj min min min dim. */
+static void build_chords(void)
+{
+    int rel_major = s_key_major ? s_key_tonic : (s_key_tonic + 3) % 12;
+    int pos0 = (rel_major * 7) % 12;              /* COF position of rel-major tonic */
+    static const uint8_t qual_by_cof[7] = { 0, 0, 0, 1, 1, 1, 2 };
+    for (int k = 0; k < 7; k++) {
+        int cof = (pos0 - 1 + k + 12) % 12;
+        s_chords[k].cof_pos = (uint8_t)cof;
+        s_chords[k].root    = (uint8_t)cof_semitone(cof);
+        s_chords[k].quality = qual_by_cof[k];
+    }
+}
+
+static int chord_tonic_index(void)            /* index of the I / i chord */
+{
+    for (int k = 0; k < 7; k++)
+        if (s_chords[k].root == s_key_tonic) return k;
+    return 1;
+}
+
+/* Chord Arp: the arp plays the selected diatonic chord. */
+static void chord_arp_apply(void)
+{
+    s_root_semitone = s_chords[s_chord_sel].root;
+    arp_use_triad(s_chords[s_chord_sel].quality);
+}
+
+static void chord_name(int k, char *b, int n) /* "C", "Dm", "Bdim" */
+{
+    const chordinfo_t *c = &s_chords[k];
+    const char *suf = c->quality == 1 ? "m" : (c->quality == 2 ? "dim" : "");
+    snprintf(b, n, "%s%s", k_note_names[c->root % 12], suf);
+}
+
+static void render_chord(void)
+{
+    char line[24];
+
+    /* COF wheel: mark the 7 diatonic chords, rotate the selected one to the top. */
+    uint8_t marked[12] = { 0 };
+    for (int k = 0; k < 7; k++) marked[s_chords[k].cof_pos] = 1;
+    cof_render_angle((float)s_chords[s_chord_sel].cof_pos * 30.0f, marked);
+
+    /* The wheel shows only the root letter — overlay the chord name (with
+     * quality) and the key in the empty lower area. */
+    chord_name(s_chord_sel, line, sizeof line);
+    draw_centered(90, line, &Font16, FG_LEVEL, BG_LEVEL);
+    snprintf(line, sizeof line, "key %s %s", k_note_names[s_key_tonic],
+             s_key_major ? "maj" : "min");
+    draw_centered(116, line, &Font12, FG_LEVEL, BG_LEVEL);
 }
 
 /* ---- Audio Config + wavetable browser ---- */
@@ -433,6 +551,67 @@ static void render_browse(void)
     }
 }
 
+/* ---- main menu + Config submenu (custom render with icons) ---- */
+
+#define MENU_ROW_H  22
+
+/* Right-pointing filled "play" triangle (~8 x 12), top-left at (x, y). */
+static void draw_play_icon(int x, int y, UWORD color)
+{
+    for (int cx = 0; cx <= 8; cx++) {
+        int half = (8 - cx) * 6 / 8;
+        Paint_DrawLine(x + cx, y + 6 - half, x + cx, y + 6 + half,
+                       color, DOT_PIXEL_1X1, LINE_STYLE_SOLID);
+    }
+}
+
+/* Simple gear centered at (cx, cy): body + hole + eight teeth. */
+static void draw_cog_icon(int cx, int cy, UWORD color, UWORD bg)
+{
+    for (int k = 0; k < 8; k++) {
+        float a = (float)k * (3.14159265f / 4.0f);
+        int tx = cx + (int)lroundf(6.0f * cosf(a));
+        int ty = cy + (int)lroundf(6.0f * sinf(a));
+        Paint_DrawRectangle(tx - 1, ty - 1, tx + 1, ty + 1, color,
+                            DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    }
+    Paint_DrawCircle(cx, cy, 5, color, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    Paint_DrawCircle(cx, cy, 2, bg,    DOT_PIXEL_1X1, DRAW_FILL_FULL);
+}
+
+static void render_main_menu(void)
+{
+    Paint_Clear(BG_LEVEL);
+    int n = s_menu.count;
+    int top = (SCREEN_H - n * MENU_ROW_H) / 2;
+    if (top < 0) top = 0;
+
+    for (int i = 0; i < n; i++) {
+        int   y   = top + i * MENU_ROW_H;
+        int   sel = (i == s_menu.selected);
+        UWORD fg  = sel ? BG_LEVEL : FG_LEVEL;
+        UWORD bg  = sel ? FG_LEVEL : BG_LEVEL;
+        if (sel)
+            Paint_DrawRectangle(2, y, 125, y + MENU_ROW_H - 3, FG_LEVEL,
+                                DOT_PIXEL_1X1, DRAW_FILL_FULL);
+        if (i < N_MODES) draw_play_icon(8, y + 3, fg);                 /* play modes */
+        else             draw_cog_icon(13, y + MENU_ROW_H / 2 - 1, fg, bg);  /* Config */
+        Paint_DrawString_EN(28, y + 4, s_menu.items[i], &Font12, fg, bg);
+    }
+}
+
+static void render_config_menu(void)
+{
+    static const char *const items[] = { "Arp Cfg", "Audio Cfg" };
+    Paint_Clear(BG_LEVEL);
+    Paint_DrawRectangle(0, 0, 127, 14, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    draw_cog_icon(9, 7, BG_LEVEL, FG_LEVEL);
+    Paint_DrawString_EN(20, 1, "Config", &Font12, BG_LEVEL, FG_LEVEL);
+    for (int i = 0; i < 2; i++)
+        draw_row(30 + i * 20, items[i], i == s_config_sel);
+    draw_centered(104, "hold = back", &Font12, FG_LEVEL, BG_LEVEL);
+}
+
 void app_init(void)
 {
     static const uint8_t triad[] = { 0, 4, 7 };  /* major triad of the key */
@@ -440,13 +619,15 @@ void app_init(void)
     s_screen = APP_SCREEN_MENU;
     menu_init(&s_menu, k_mode_items, (uint8_t)MODE_COUNT);
     s_mode_active = false;        /* silent until a mode is selected */
-    s_eng_last_root = -1;
-    s_cv_midi = -1;
     s_key_angle = 0.0f;
     for (int i = 0; i < 12; i++) s_marked[i] = 0;
     s_tone_off = 0;
     s_root_semitone = 0;
     s_arp_cursor = 0;
+    s_key_tonic = 0;
+    s_key_major = true;
+    build_chords();
+    s_chord_sel = chord_tonic_index();
 
     arp_init(arp_step_cb, NULL);
     arp_set_chord(triad, sizeof triad);
@@ -469,8 +650,8 @@ void app_tick(void)
     int32_t  detents = encoder_get_delta();
     encoder_btn_event_t ev = encoder_get_button_event();
 
-    /* Note-generation core: feed the arp root (Arp) or drive the voice (Direct). */
-    engine_tick();
+    /* Drain USB-MIDI note events into the voice pool (USB MIDI mode). */
+    midi_drain();
 
     /* Arp runs while the active engine is Arp (arp_enabled set via set_mode). */
     if (arp_enabled()) {
@@ -483,47 +664,95 @@ void app_tick(void)
     case APP_SCREEN_MENU:
         if (detents) menu_move(&s_menu, detents);
         if (ev == ENC_BTN_SHORT_PRESS) {
-            s_screen = (AppScreen)(APP_SCREEN_CV_VCO + s_menu.selected);
-            switch (s_screen) {
-            case APP_SCREEN_CV_VCO:  set_mode(SRC_CV, ENG_DIRECT); break;
-            case APP_SCREEN_CV_ARP:  set_mode(SRC_CV, ENG_ARP);    break;
-            case APP_SCREEN_KEY_ARP:
-                s_root_semitone = cof_semitone(centered_note_index());
-                set_mode(SRC_WHEEL, ENG_ARP);
-                break;
-            default: break;   /* Arp Cfg / Audio Cfg: config only, mode unchanged */
+            if (s_menu.selected < N_MODES) {
+                s_screen = (AppScreen)(APP_SCREEN_FIRST_MODE + s_menu.selected);
+                switch (s_screen) {
+                case APP_SCREEN_KEY_ARP:
+                    s_key_tonic = cof_semitone(centered_note_index());
+                    key_arp_apply();
+                    set_mode(SRC_WHEEL, ENG_ARP);
+                    break;
+                case APP_SCREEN_CHORD_ARP:
+                    build_chords();
+                    s_chord_sel = chord_tonic_index();
+                    chord_arp_apply();
+                    set_mode(SRC_CHORD, ENG_ARP);
+                    break;
+                case APP_SCREEN_USB_MIDI:
+                    set_mode(SRC_MIDI, ENG_DIRECT);
+                    break;
+                default: break;
+                }
+            } else {
+                s_screen = APP_SCREEN_CONFIG;       /* Config submenu */
             }
             printf("MENU select: %s\r\n", k_mode_items[s_menu.selected]);
         }
-        menu_render(&s_menu);
+        render_main_menu();
         break;
 
-    case APP_SCREEN_CV_VCO:
-    case APP_SCREEN_CV_ARP:
+    case APP_SCREEN_CONFIG:
+        if (ev == ENC_BTN_LONG_PRESS) {
+            s_screen = APP_SCREEN_MENU;
+        } else if (ev == ENC_BTN_SHORT_PRESS) {
+            s_screen = (s_config_sel == 0) ? APP_SCREEN_ARP_CFG : APP_SCREEN_AUDIO;
+        } else if (detents) {
+            int v = s_config_sel + (int)detents;
+            if (v < 0) v = 0;
+            if (v > 1) v = 1;
+            s_config_sel = v;
+        }
+        render_config_menu();
+        break;
+
+    case APP_SCREEN_USB_MIDI:
         if (ev == ENC_BTN_LONG_PRESS) {
             s_screen = APP_SCREEN_MENU;            /* mode persists, keeps sounding */
-        } else if (ev == ENC_BTN_SHORT_PRESS) {   /* toggle CV-IN-A / CV-IN-B */
-            s_cv_src = (s_cv_src == ANALOG_CV_A) ? ANALOG_CV_B : ANALOG_CV_A;
+        } else if (ev == ENC_BTN_SHORT_PRESS) {   /* panic: release every voice */
+            wt_osc_all_off();
+            midi_reset();
         }
-        render_cv();
+        render_usb_midi();
         break;
 
     case APP_SCREEN_KEY_ARP:
         if (ev == ENC_BTN_LONG_PRESS) {
             s_screen = APP_SCREEN_MENU;            /* mode persists, keeps sounding */
+        } else if (ev == ENC_BTN_SHORT_PRESS) {
+            s_key_major = !s_key_major;            /* toggle major / minor */
+            key_arp_apply();
         } else if (detents) {
             s_key_angle += (float)detents * 30.0f;
             while (s_key_angle < 0.0f)    s_key_angle += 360.0f;
             while (s_key_angle >= 360.0f) s_key_angle -= 360.0f;
-            s_root_semitone = cof_semitone(centered_note_index());
+            s_key_tonic = cof_semitone(centered_note_index());
+            key_arp_apply();
         }
         cof_render_angle(s_key_angle, s_marked);
+        {
+            char line[16];
+            snprintf(line, sizeof line, "%s %s", k_note_names[s_key_tonic],
+                     s_key_major ? "maj" : "min");
+            draw_centered(116, line, &Font12, FG_LEVEL, BG_LEVEL);
+        }
+        break;
+
+    case APP_SCREEN_CHORD_ARP:
+        if (ev == ENC_BTN_LONG_PRESS) {
+            s_screen = APP_SCREEN_MENU;            /* mode persists, keeps sounding */
+        } else if (detents) {
+            int v = s_chord_sel + (int)detents;
+            if (v < 0) v = 0;
+            if (v > 6) v = 6;
+            if (v != s_chord_sel) { s_chord_sel = v; chord_arp_apply(); }
+        }
+        render_chord();
         break;
 
     case APP_SCREEN_ARP_CFG:
         if (ev == ENC_BTN_LONG_PRESS) {
             if (s_arp_editing) s_arp_editing = false;   /* leave edit first */
-            else s_screen = APP_SCREEN_MENU;
+            else s_screen = APP_SCREEN_CONFIG;
         } else if (ev == ENC_BTN_SHORT_PRESS) {
             if (s_arp_editing) {
                 s_arp_editing = false;                  /* confirm value */
@@ -547,7 +776,7 @@ void app_tick(void)
     case APP_SCREEN_AUDIO:
         if (ev == ENC_BTN_LONG_PRESS) {
             if (s_audio_editing) s_audio_editing = false;   /* leave edit first */
-            else s_screen = APP_SCREEN_MENU;
+            else s_screen = APP_SCREEN_CONFIG;
         } else if (ev == ENC_BTN_SHORT_PRESS) {
             if (s_audio_cursor == 0) {
                 enter_browser();                            /* Wavetable -> browse */

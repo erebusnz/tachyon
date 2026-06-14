@@ -57,6 +57,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/UI/text.c
     Core/UI/boot.c
     Core/UI/app.c
+    USB_DEVICE/App/usbd_midi.c
     Core/IO/audio.c
     Core/IO/cv_out.c
     Core/IO/gate_out.c
@@ -92,6 +93,16 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
 )
+
+# USB personality: default MIDI device; -DUSB_SERIAL_DEBUG=ON enumerates as a
+# CDC serial console instead (printf over USB). See usb-midi.md §3.
+option(USB_SERIAL_DEBUG "USB enumerates as a CDC serial console instead of the MIDI device" OFF)
+if(USB_SERIAL_DEBUG)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE USB_SERIAL_DEBUG=1)
+    message(STATUS "USB personality: CDC serial debug console")
+else()
+    message(STATUS "USB personality: MIDI device")
+endif()
 
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)

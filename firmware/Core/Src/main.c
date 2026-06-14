@@ -97,9 +97,10 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 int _write(int file, char *ptr, int len)
 {
     (void)file;
-    /* No host connected? Drop the output. Without this the module would stall
-     * ~20 ms per printf when run standalone (CDC reports busy / NULL handle
-     * until the device is enumerated). printf becomes a harmless no-op. */
+#if USB_SERIAL_DEBUG
+    /* USB is the CDC console. No host connected? Drop the output — without this
+     * the module would stall ~20 ms per printf when run standalone (CDC reports
+     * busy / NULL handle until enumerated). printf becomes a harmless no-op. */
     if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED)
         return len;
     /* CDC_Transmit_FS drops the buffer (returns USBD_BUSY) while a previous
@@ -110,6 +111,12 @@ int _write(int file, char *ptr, int len)
     while (CDC_Transmit_FS((uint8_t*)ptr, (uint16_t)len) == USBD_BUSY) {
         if ((HAL_GetTick() - start) >= 20U) break;
     }
+#else
+    /* USB is the MIDI device — route printf to SWO/ITM (debugger trace). Harmless
+     * (the byte is dropped) when no SWV probe is attached. See usb-midi.md §3. */
+    for (int i = 0; i < len; i++)
+        (void)ITM_SendChar((uint32_t)(uint8_t)ptr[i]);
+#endif /* USB_SERIAL_DEBUG */
     return len;
 }
 /* USER CODE END 0 */

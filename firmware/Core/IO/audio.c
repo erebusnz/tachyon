@@ -43,7 +43,9 @@ static void tone_render(int32_t *stereo, uint32_t n, void *ctx)
 
 /* Fill one half (HALF_FRAMES frames) of the circular buffer: pull samples from
  * the render source (or zeros), then pack each 32-bit L/R into hi/lo halfwords.
- * Runs in DMA IRQ context. */
+ * Runs in DMA IRQ context. Force-optimized even in -O0 builds — this is on the
+ * audio deadline (see wt_render). */
+__attribute__((optimize("O2")))
 static void audio_fill_half(int half)
 {
   audio_render_fn render = s_render;

@@ -1,6 +1,8 @@
 #ifndef APP_H
 #define APP_H
 
+#include <stdint.h>
+
 /* Top-level UI state machine for the Tachyon front panel.
  *
  * On boot the device shows a menu of operating modes (see
@@ -26,5 +28,14 @@ void app_init(void);
 /* Consume pending encoder input, advance the state machine, and render the
  * current screen into the selected Paint image. Call once per main-loop pass. */
 void app_tick(void);
+
+/* USB-MIDI input seam. The USB-MIDI device class (usbd_midi.c) calls
+ * app_midi_event() from the OTG IRQ for each parsed note event; events are
+ * queued lock-free and drained on the main loop in app_tick(), driving the
+ * polyphonic voice pool while the USB MIDI mode is active. Velocity is unused
+ * for now. */
+#define APP_MIDI_NOTE_OFF  0u
+#define APP_MIDI_NOTE_ON   1u
+void app_midi_event(uint8_t kind, uint8_t note, uint8_t vel);
 
 #endif
