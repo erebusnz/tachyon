@@ -171,7 +171,8 @@ typedef enum {
     AP_ENABLED = 0, AP_DIR, AP_OCT, AP_LEN, AP_CLK, AP_TEMPO, AP_COUNT
 } arp_param_t;
 
-static int s_arp_cursor;
+static int  s_arp_cursor;
+static bool s_arp_editing;   /* rotation edits the cursored param's value */
 
 static const char *const arp_names[AP_COUNT] = {
     "Enable", "Dir", "Octave", "Length", "Clock", "Tempo",
@@ -251,7 +252,11 @@ static void arp_render(void)
     for (int i = 0; i < AP_COUNT; i++) {
         int y = 16 + i * 15;
         arp_value_str((arp_param_t)i, val, sizeof val);
-        snprintf(line, sizeof line, "%s: %s", arp_names[i], val);
+        /* Brackets around the value mark the param being edited. */
+        if (i == s_arp_cursor && s_arp_editing)
+            snprintf(line, sizeof line, "%s:[%s]", arp_names[i], val);
+        else
+            snprintf(line, sizeof line, "%s: %s", arp_names[i], val);
         if (i == s_arp_cursor) {
             Paint_DrawRectangle(0, y - 1, 127, y + 12, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
             Paint_DrawString_EN(4, y, line, &Font12, BG_LEVEL, FG_LEVEL);
@@ -482,12 +487,24 @@ void app_tick(void)
 
     case APP_SCREEN_ARP:
         if (ev == ENC_BTN_LONG_PRESS) {
-            s_screen = APP_SCREEN_MENU;
+            if (s_arp_editing) s_arp_editing = false;   /* leave edit first */
+            else s_screen = APP_SCREEN_MENU;
         } else if (ev == ENC_BTN_SHORT_PRESS) {
-            s_arp_cursor = (s_arp_cursor + 1) % AP_COUNT;
-        }
-        if (detents) {
-            arp_param_adjust((arp_param_t)s_arp_cursor, detents);
+            if (s_arp_editing) {
+                s_arp_editing = false;                  /* confirm value */
+            } else if (s_arp_cursor == AP_ENABLED || s_arp_cursor == AP_CLK) {
+                arp_param_adjust((arp_param_t)s_arp_cursor, 1);  /* toggle in place */
+            } else {
+                s_arp_editing = true;                   /* edit value param */
+            }
+        } else if (detents) {
+            if (s_arp_editing) {
+                arp_param_adjust((arp_param_t)s_arp_cursor, detents);
+            } else {
+                int c = ((int)s_arp_cursor + (int)detents) % AP_COUNT;
+                if (c < 0) c += AP_COUNT;
+                s_arp_cursor = c;
+            }
         }
         arp_render();
         break;
