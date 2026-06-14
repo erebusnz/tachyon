@@ -15,3 +15,9 @@ __pycache__/
 
 # EasyEDA auto-backup snapshots (<project>_backup/)
 *_backup/
+tachyon.eprj_backup
+.claude/settings.local.json
+
+# Local debug/capture artifacts
+screenshots/
+debug.log

@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <math.h>
 #include "usbd_cdc_if.h"
 #include "DEV_Config.h"
 #include "OLED_1in5.h"
@@ -35,6 +36,8 @@
 #include "gate_out.h"
 #include "analog_in.h"
 #include "clock_in.h"
+#include "sd_fs.h"
+#include "wt_osc.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -89,9 +92,31 @@ static void MX_TIM3_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+extern USBD_HandleTypeDef hUsbDeviceFS;
+
 int _write(int file, char *ptr, int len)
 {
-    CDC_Transmit_FS((uint8_t*)ptr, len);
+    (void)file;
+#if USB_SERIAL_DEBUG
+    /* USB is the CDC console. No host connected? Drop the output — without this
+     * the module would stall ~20 ms per printf when run standalone (CDC reports
+     * busy / NULL handle until enumerated). printf becomes a harmless no-op. */
+    if (hUsbDeviceFS.dev_state != USBD_STATE_CONFIGURED)
+        return len;
+    /* CDC_Transmit_FS drops the buffer (returns USBD_BUSY) while a previous
+     * packet is still in flight, so back-to-back printf lines would be lost.
+     * Wait briefly for the IN endpoint to free up; bound the wait so we never
+     * block long even if the host stops draining the port. */
+    uint32_t start = HAL_GetTick();
+    while (CDC_Transmit_FS((uint8_t*)ptr, (uint16_t)len) == USBD_BUSY) {
+        if ((HAL_GetTick() - start) >= 20U) break;
+    }
+#else
+    /* USB is the MIDI device — route printf to SWO/ITM (debugger trace). Harmless
+     * (the byte is dropped) when no SWV probe is attached. See usb-midi.md §3. */
+    for (int i = 0; i < len; i++)
+        (void)ITM_SendChar((uint32_t)(uint8_t)ptr[i]);
+#endif /* USB_SERIAL_DEBUG */
     return len;
 }
 /* USER CODE END 0 */
@@ -142,6 +167,13 @@ int main(void)
   HAL_Delay(1000);
   printf("USB ready\r\n");
 
+  /* Mount the SD card; the app loads/selects wavetables from it. */
+  if (HAL_GPIO_ReadPin(SD_CD_GPIO_Port, SD_CD_Pin) == GPIO_PIN_SET) {
+    if (sd_fs_mount()) sd_fs_dump_root();
+  } else {
+    printf("No SD card detected\r\n");
+  }
+
   System_Init();
   OLED_1in5_Init();
   OLED_1in5_Clear();
@@ -155,6 +187,11 @@ int main(void)
   printf("Encoder initialized\r\n");
   printf("OLED initialized\r\n");
 
+  /* Load SD data (folder list + default wavetable) NOW, while audio is still
+   * off — SD reads here have no audio-DMA/render-IRQ contention. The user
+   * expects silence during the boot splash anyway. */
+  app_preload();
+
   /* Power-on starfield hyperdrive splash (5 s). */
   boot_splash(image, 5000);
 
@@ -167,7 +204,12 @@ int main(void)
   analog_in_init();
   clock_in_init();
 
-  /* Boot into the operating-mode menu. */
+  /* Wavetable oscillator is the audio voice: install it on the render seam. */
+  wt_osc_init();
+  wt_osc_install();
+
+  /* Boot into the menu; app_init points the oscillator at the preloaded
+   * wavetable (silent until a note is gated on). */
   app_init();
   /* USER CODE END 2 */
 
@@ -262,13 +304,16 @@ static void MX_ADC1_Init(void)
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = ENABLE;
+  /* Single-channel mode: analog_in reads CV-A/CV-B/pot one at a time
+   * (reconfiguring the channel per read) — a polled multi-rank scan overruns
+   * the data register and misaligns channels on the F4. */
+  hadc1.Init.ScanConvMode = DISABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 3;
+  hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -379,7 +424,12 @@ static void MX_SDIO_SD_Init(void)
   hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
   hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
   hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
-  hsd.Init.ClockDiv = 0;
+  /* SDIO_CK = 48 MHz / (ClockDiv + 2). ClockDiv=8 -> 4.8 MHz. We read blocks
+   * in polling mode (no SDIO DMA wired up); at the full 24 MHz the -O0 HAL
+   * read loop cannot drain the 16-word FIFO in time and RX-overruns
+   * (HAL_SD_ERROR_RX_OVERRUN). Samples are loaded to RAM once (not streamed),
+   * so the slower clock costs nothing. */
+  hsd.Init.ClockDiv = 8;
   if (HAL_SD_Init(&hsd) != HAL_OK)
   {
     Error_Handler();

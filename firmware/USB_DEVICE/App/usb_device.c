@@ -25,6 +25,7 @@
 #include "usbd_desc.h"
 #include "usbd_cdc.h"
 #include "usbd_cdc_if.h"
+#include "usbd_midi.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -72,6 +73,8 @@ void MX_USB_DEVICE_Init(void)
   {
     Error_Handler();
   }
+#if USB_SERIAL_DEBUG
+  /* CDC virtual COM port: printf-over-USB debug console. */
   if (USBD_RegisterClass(&hUsbDeviceFS, &USBD_CDC) != USBD_OK)
   {
     Error_Handler();
@@ -80,6 +83,13 @@ void MX_USB_DEVICE_Init(void)
   {
     Error_Handler();
   }
+#else
+  /* Default: class-compliant USB-MIDI device. */
+  if (USBD_RegisterClass(&hUsbDeviceFS, &USBD_MIDI) != USBD_OK)
+  {
+    Error_Handler();
+  }
+#endif /* USB_SERIAL_DEBUG */
   if (USBD_Start(&hUsbDeviceFS) != USBD_OK)
   {
     Error_Handler();

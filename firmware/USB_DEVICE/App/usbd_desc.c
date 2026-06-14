@@ -66,7 +66,17 @@
 #define USBD_LANGID_STRING     1033
 #define USBD_MANUFACTURER_STRING     "STMicroelectronics"
 #define USBD_PID_FS     22336
+#if USB_SERIAL_DEBUG
+#define USBD_DEVICE_CLASS        0x02   /* CDC, defined at device level */
+#define USBD_DEVICE_SUBCLASS     0x02
+#define USBD_DEVICE_PROTOCOL     0x00
 #define USBD_PRODUCT_STRING_FS     "STM32 Virtual ComPort"
+#else
+#define USBD_DEVICE_CLASS        0x00   /* MIDI: class is defined per-interface */
+#define USBD_DEVICE_SUBCLASS     0x00
+#define USBD_DEVICE_PROTOCOL     0x00
+#define USBD_PRODUCT_STRING_FS     "Tachyon MIDI"
+#endif /* USB_SERIAL_DEBUG */
 #define USBD_CONFIGURATION_STRING_FS     "CDC Config"
 #define USBD_INTERFACE_STRING_FS     "CDC Interface"
 
@@ -164,9 +174,9 @@ __ALIGN_BEGIN uint8_t USBD_FS_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END =
   0x00,                       /*bcdUSB */
 #endif /* (USBD_LPM_ENABLED == 1) */
   0x02,
-  0x02,                       /*bDeviceClass*/
-  0x02,                       /*bDeviceSubClass*/
-  0x00,                       /*bDeviceProtocol*/
+  USBD_DEVICE_CLASS,          /*bDeviceClass*/
+  USBD_DEVICE_SUBCLASS,       /*bDeviceSubClass*/
+  USBD_DEVICE_PROTOCOL,       /*bDeviceProtocol*/
   USB_MAX_EP0_SIZE,           /*bMaxPacketSize*/
   LOBYTE(USBD_VID),           /*idVendor*/
   HIBYTE(USBD_VID),           /*idVendor*/

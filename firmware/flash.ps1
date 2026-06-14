@@ -15,15 +15,22 @@
 .PARAMETER Build
     Run `cmake --build` for the chosen config before flashing.
 
+.PARAMETER UsbSerialDebug
+    Build with USB_SERIAL_DEBUG=ON so USB enumerates as a CDC serial console
+    (printf over USB) instead of the default MIDI device. Only affects the build
+    step, so combine with -Build. See usb-midi.md §3.
+
 .EXAMPLE
     ./flash.ps1              # flash build/Debug/firmware.elf
-    ./flash.ps1 -Build       # build Debug, then flash
+    ./flash.ps1 -Build       # build Debug (MIDI device), then flash
+    ./flash.ps1 -Build -UsbSerialDebug  # build the CDC serial-console variant, then flash
     ./flash.ps1 Release      # flash build/Release/firmware.elf
 #>
 param(
     [ValidateSet('Debug', 'Release')]
     [string]$Config = 'Debug',
-    [switch]$Build
+    [switch]$Build,
+    [switch]$UsbSerialDebug
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,9 +60,17 @@ $cli = Find-Programmer
 $elf = Join-Path $root "build\$Config\firmware.elf"
 
 if ($Build) {
+    $buildDir = Join-Path $root "build\$Config"
+    $usbFlag = if ($UsbSerialDebug) { 'ON' } else { 'OFF' }
+    Write-Host "Configuring $Config (USB_SERIAL_DEBUG=$usbFlag)..." -ForegroundColor Cyan
+    & cmake -S $root -B $buildDir "-DUSB_SERIAL_DEBUG=$usbFlag"
+    if ($LASTEXITCODE -ne 0) { throw "CMake configure failed." }
     Write-Host "Building $Config..." -ForegroundColor Cyan
-    & cmake --build (Join-Path $root "build\$Config")
+    & cmake --build $buildDir
     if ($LASTEXITCODE -ne 0) { throw "Build failed." }
+}
+elseif ($UsbSerialDebug) {
+    Write-Warning "-UsbSerialDebug only affects the build; pass -Build to rebuild. Flashing the existing ELF as-is."
 }
 
 if (-not (Test-Path $elf)) {
