@@ -1,11 +1,13 @@
 # Tachyon
 
-An open-hardware Eurorack step sequencer with onboard voice, built
-around the STM32F405RGT6 (WeAct core board). Tachyon generates two
-precision 1 V/oct CV outputs, two +5 V gate outputs, and two
-audio outputs, accepts two CV modulation inputs and an external clock,
-and is navigated via a rotary encoder, a parameter adjustment pot,
-and a 128×128 OLED screen.
+An open-hardware Eurorack step sequencer with an onboard **wavetable
+voice**, built around the STM32F405RGT6 (WeAct core board). Tachyon plays
+single-cycle wavetables loaded from a microSD card (Korg
+`.korgmultisample` format), driven by a circle-of-fifths key/chord
+arpeggiator or by a USB-MIDI host. It generates two precision 1 V/oct CV
+outputs, two +5 V gate outputs, and two audio outputs, accepts two CV
+modulation inputs and an external clock, and is navigated via a rotary
+encoder, a parameter adjustment pot, and a 128×128 OLED screen.
 
 ## At a glance
 
@@ -141,6 +143,61 @@ the datasheets for key components — for the hardware design and the
 [`pcb-designer`](.claude/skills/pcb-designer/) skill allow Claude to
 reason about design changes to both hardware and software without
 needing additional context to be shared within Claude.
+
+## Operating the synth
+
+### Wavetables — microSD (Korg `.korgmultisample`)
+
+Tachyon's voice plays single-cycle wavetables stored on the WeAct board's
+microSD slot. Wavetables are **Korg `.korgmultisample`** sets, created with
+Korg's free
+[**Sample Builder**](https://www.korg.com/us/support/download/software/1/447/4811/)
+application (the sample-import tool for the Wavestate / Modwave): load your
+WAVs, lay out the key-zones, and export the `.korgmultisample`. The format
+can also be produced by tools such as
+[ConvertWithMoss](https://github.com/git-moss/ConvertWithMoss) (whose
+reference parser this firmware follows).
+
+Card layout:
+
+- Format the card **FAT32 or exFAT**.
+- Put **one wavetable per folder** in the card root. Each folder holds a
+  `.korgmultisample` file plus the member **WAV** files it references
+  (16-bit mono PCM, single-cycle).
+- The `.korgmultisample` maps **key-zones**: each zone assigns a key range
+  (low / high / root) to one member WAV, so the timbre is band-limited per
+  octave. The stock sets tile roughly one octave per zone.
+
+On boot Tachyon mounts the card, caches the folder list, and loads a
+default wavetable. Pick a different one from **Config → Audio Cfg →
+Wavetable** (a scrolling browser of the card's folders); **Level** on the
+same screen sets output volume. The played note chooses the zone and sets
+the pitch — pitch is independent of each sample's recorded rate. Up to
+**four voices** sound at once.
+
+### The three play modes
+
+Select a mode from the main menu (turn the encoder, push to enter). A mode
+is an *instrument* — it keeps sounding while you visit the config screens;
+**long-press** the encoder to return to the menu.
+
+| Mode | What it does | Controls |
+|---|---|---|
+| **Key Arp** | A circle-of-fifths **key wheel**; the arpeggiator plays the key's tonic triad. | Turn = pick key · push = major/minor |
+| **Chord Arp** | Pick among the **seven diatonic triads** of the selected key (circle-of-fifths order); the arp plays the chosen chord. | Turn = pick chord |
+| **USB MIDI** | Tachyon enumerates over USB-C as **"Tachyon MIDI"**; notes from a DAW or controller play the wavetable voice **polyphonically** (4 voices). | Push = all-notes-off panic |
+
+The arpeggiator (Key / Chord modes) is configured in **Config → Arp Cfg**:
+direction, octave range, step length, internal/external clock, and tempo.
+In those modes each step drives the audio voice **and** `CV-OUT-A`
+(1 V/oct) plus the gate outputs — so Tachyon plays its own voice while
+sequencing external modules, clocked internally or from the clock input.
+The **USB MIDI** mode plays the internal voice only.
+
+See **[harmony-engine.md](harmony-engine.md)** for the source × engine
+model behind the modes, and **[usb-midi.md](usb-midi.md)** for the
+USB-MIDI device (including the `USB_SERIAL_DEBUG` build flag that swaps the
+port to a CDC serial console for debugging).
 
 ## Licence
 
