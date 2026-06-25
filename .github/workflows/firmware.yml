@@ -93,3 +93,23 @@ jobs:
             --suppress='preprocessorErrorDirective:*cmsis_compiler.h' \
             --error-exitcode=1 \
             -j2
+
+  unit-tests:
+    name: unit tests (host)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      # Host build with the runner's native gcc (NOT the cross toolchain) —
+      # see firmware/test/. working-directory is firmware/ (workflow default).
+      - name: Configure
+        run: cmake -S test -B test/build -G Ninja
+
+      - name: Build
+        run: cmake --build test/build
+
+      - name: Test
+        run: ctest --test-dir test/build --output-on-failure
