@@ -68,11 +68,24 @@ jobs:
       - name: Configure (for compile_commands.json)
         run: cmake --preset Debug
 
+      # Filter the compile DB down to the project's own Core/ sources, dropping
+      # vendor trees (Drivers, Middlewares, USB_DEVICE). Done in jq rather than
+      # cppcheck --file-filter so it doesn't depend on the runner's cppcheck
+      # glob/path semantics. Note: Middlewares has its own .../Core/ dir, hence
+      # the explicit exclude.
+      - name: Filter compile DB to project Core/
+        run: |
+          jq '[ .[]
+                | select(.file | test("(^|/)Core/"))
+                | select(.file | test("Middlewares|Drivers|USB_DEVICE") | not) ]' \
+            build/Debug/compile_commands.json > core_compile_commands.json
+          echo "Core translation units checked: $(jq length core_compile_commands.json)"
+          jq -r '.[].file' core_compile_commands.json
+
       - name: cppcheck
         run: |
           cppcheck \
-            --project=build/Debug/compile_commands.json \
-            --file-filter='*/firmware/Core/*' \
+            --project=core_compile_commands.json \
             --enable=warning,performance,portability \
             --inline-suppr \
             --suppress=missingIncludeSystem \
