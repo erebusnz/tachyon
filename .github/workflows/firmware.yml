@@ -28,7 +28,7 @@ jobs:
           - { name: midi, flag: "OFF" }   # default personality: USB-MIDI device
           - { name: cdc,  flag: "ON" }    # USB_SERIAL_DEBUG: CDC serial console
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install arm-none-eabi-gcc
         uses: carlosperate/arm-none-eabi-gcc-action@v1
@@ -43,7 +43,7 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Upload ELF + map
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: firmware-${{ matrix.preset }}-${{ matrix.usb.name }}
           path: |
@@ -55,7 +55,7 @@ jobs:
     name: cppcheck (Core/)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install arm-none-eabi-gcc
         uses: carlosperate/arm-none-eabi-gcc-action@v1
