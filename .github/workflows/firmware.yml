@@ -1,0 +1,82 @@
+name: firmware
+
+# Tier 1 (build) + Tier 1.5 (static analysis) CI for firmware/.
+# Builds the STM32F405 firmware across both USB personalities and both build
+# types using the repo's own CMake presets, then runs cppcheck over Core/.
+
+on:
+  push:
+    branches: [main]
+    paths: ['firmware/**', '.github/workflows/firmware.yml']
+  pull_request:
+    paths: ['firmware/**', '.github/workflows/firmware.yml']
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: firmware
+
+jobs:
+  build:
+    name: build ${{ matrix.preset }} / ${{ matrix.usb.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [Debug, Release]
+        usb:
+          - { name: midi, flag: "OFF" }   # default personality: USB-MIDI device
+          - { name: cdc,  flag: "ON" }    # USB_SERIAL_DEBUG: CDC serial console
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install arm-none-eabi-gcc
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -DUSB_SERIAL_DEBUG=${{ matrix.usb.flag }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Upload ELF + map
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.preset }}-${{ matrix.usb.name }}
+          path: |
+            firmware/build/${{ matrix.preset }}/firmware.elf
+            firmware/build/${{ matrix.preset }}/firmware.map
+          if-no-files-found: warn
+
+  static-analysis:
+    name: cppcheck (Core/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install arm-none-eabi-gcc
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cppcheck
+
+      # Configure once to emit compile_commands.json (exact defines + include
+      # paths). cppcheck reads the DB directly; it does not invoke the compiler.
+      - name: Configure (for compile_commands.json)
+        run: cmake --preset Debug
+
+      - name: cppcheck
+        run: |
+          cppcheck \
+            --project=build/Debug/compile_commands.json \
+            --file-filter='*/firmware/Core/*' \
+            --enable=warning,performance,portability \
+            --inline-suppr \
+            --suppress=missingIncludeSystem \
+            --suppress=unmatchedSuppression \
+            --suppress='preprocessorErrorDirective:*cmsis_compiler.h' \
+            --error-exitcode=1 \
+            -j2
