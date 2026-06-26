@@ -195,9 +195,82 @@ static void test_read_mono_rejects_8bit(void)
     TEST_ASSERT_EQUAL_UINT32(0, got);
 }
 
+static void test_parse_channels_high_byte(void)
+{
+    /* channels=256=0x0100: fmt[2]=0x00, fmt[3]=0x01.
+     * Correct: 0|(1<<8)=256. Shift-by-4 mutant: 0|(1<<4)=16. */
+    b_riff();
+    b_fmt(1, 256, 44100, 16);
+    b_data_s16(SAMPLES, 4);
+    FIL f = mkfil();
+    wav_info_t info;
+    TEST_ASSERT_EQUAL(FR_OK, wav_parse(&f, &info));
+    TEST_ASSERT_EQUAL_UINT16(256, info.channels);
+}
+
+static void test_parse_bps_high_byte(void)
+{
+    /* bps=256=0x0100: fmt[14]=0x00, fmt[15]=0x01.
+     * Correct: 0|(1<<8)=256. Shift-by-4 mutant: 0|(1<<4)=16. */
+    b_riff();
+    b_fmt(1, 1, 44100, 256);
+    b_data_s16(SAMPLES, 4);
+    FIL f = mkfil();
+    wav_info_t info;
+    TEST_ASSERT_EQUAL(FR_OK, wav_parse(&f, &info));
+    TEST_ASSERT_EQUAL_UINT16(256, info.bits_per_sample);
+}
+
+static void test_parse_sample_rate_top_byte(void)
+{
+    /* A sample_rate with a non-zero top byte exercises rd_u32le's p[3]<<24
+     * term. Every other test uses rates whose high byte is 0, so a shift-by-23
+     * mutant would slip past them; here it decodes a different value. */
+    b_riff();
+    b_fmt(1, 1, 0x81020304u, 16);
+    b_data_s16(SAMPLES, 4);
+    FIL f = mkfil();
+    wav_info_t info;
+    TEST_ASSERT_EQUAL(FR_OK, wav_parse(&f, &info));
+    TEST_ASSERT_EQUAL_UINT32(0x81020304u, info.sample_rate);
+}
+
+static void test_parse_rejects_zero_frame_bytes(void)
+{
+    /* bits_per_sample=0 makes frame_bytes = channels * (0/8) = 0. The reader
+     * must reject it (FR_INT_ERR) via the frame_bytes==0 guard; without that
+     * guard the frames = data_bytes / frame_bytes line divides by zero. */
+    b_riff();
+    b_fmt(1, 1, 44100, 0);
+    b_data_s16(SAMPLES, 4);
+
+    FIL f = mkfil();
+    wav_info_t info;
+    TEST_ASSERT_EQUAL(FR_INT_ERR, wav_parse(&f, &info));
+}
+
+static void test_parse_format_nonzero_high_byte(void)
+{
+    b_riff();
+    /* WAVE_FORMAT_EXTENSIBLE = 0xFFFE: fmt[1]=0xFF is non-zero.
+     * The shift-by-4 mutant yields 0x0FFE instead of 0xFFFE. */
+    b_fmt(0xFFFE, 1, 44100, 16);
+    b_data_s16(SAMPLES, 4);
+
+    FIL f = mkfil();
+    wav_info_t info;
+    TEST_ASSERT_EQUAL(FR_OK, wav_parse(&f, &info));
+    TEST_ASSERT_EQUAL_UINT16(0xFFFE, info.format);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_parse_format_nonzero_high_byte);
+    RUN_TEST(test_parse_sample_rate_top_byte);
+    RUN_TEST(test_parse_rejects_zero_frame_bytes);
+    RUN_TEST(test_parse_channels_high_byte);
+    RUN_TEST(test_parse_bps_high_byte);
     RUN_TEST(test_parse_basic_mono16);
     RUN_TEST(test_parse_skips_unknown_chunk);
     RUN_TEST(test_parse_odd_chunk_padding);

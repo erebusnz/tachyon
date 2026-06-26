@@ -204,9 +204,78 @@ static void test_gate_length_bounds(void)
     TEST_ASSERT_EQUAL_UINT32(50u, cap_gate[2]);
 }
 
+static void test_updown_seq_wraps_at_correct_period(void)
+{
+    /* Chord starting at non-zero semitone (1) so the phantom s_seq[4] element
+     * (uninitialized / stale, almost certainly 0) differs from note[0]=1.
+     * Correct seq_len=4 wraps step 4 back to s_seq[0]=1.
+     * Off-by-one mutant seq_len=5 plays s_seq[4] on the 5th step instead. */
+    static const uint8_t chord[3] = {1, 5, 8};
+    arp_set_clock(ARP_CLK_EXTERNAL);
+    arp_set_chord(chord, 3);
+    arp_set_octaves(1);
+    arp_set_dir(ARP_UPDOWN);
+    arp_set_length(64);
+    arp_set_enabled(true);
+    pulse_n(5, 100);
+    /* seq = [1, 5, 8, 5], len=4; 5th step wraps to seq[0]=1 */
+    TEST_ASSERT_EQUAL_INT(1, cap_note[0]);
+    TEST_ASSERT_EQUAL_INT(5, cap_note[1]);
+    TEST_ASSERT_EQUAL_INT(8, cap_note[2]);
+    TEST_ASSERT_EQUAL_INT(5, cap_note[3]);
+    TEST_ASSERT_EQUAL_INT(1, cap_note[4]);
+}
+
+static void test_fallback_gate_is_half_interval(void)
+{
+    /* First step has no previous timestamp so gate uses the BPM fallback:
+     * 30000/bpm (~half the nominal step interval).
+     * The doubling mutant uses 60000/bpm, giving 500 ms instead of 250 ms. */
+    setup_chord_major(1, ARP_UP);
+    arp_set_bpm(120);   /* 30000/120 = 250 ms; mutant gives 60000/120 = 500 ms */
+    pulse_n(1, 100);
+    TEST_ASSERT_EQUAL_UINT32(250u, cap_gate[0]);
+}
+
+static void test_gate_clamped_at_2000ms(void)
+{
+    /* 5000 ms cadence -> derived gate = dt/2 = 2500 ms.
+     * Correct code clamps the gate ceiling to 2000; a raised-ceiling mutant
+     * (e.g. 3000) would let 2500 pass through. */
+    setup_chord_major(1, ARP_UP);
+    pulse_n(3, 5000);
+    TEST_ASSERT_EQUAL_UINT32(2000u, cap_gate[1]);
+}
+
+static void test_internal_clock_interval_bpm60(void)
+{
+    /* BPM=60: correct interval = 60000/60 = 1000 ms.
+     * A halved-numerator mutant (30000/bpm) gives 500 ms and fires a step
+     * too early -- the +500 ms tick must NOT fire under correct code. */
+    static const uint8_t maj[3] = {0, 4, 7};
+    arp_set_chord(maj, 3);
+    arp_set_clock(ARP_CLK_INTERNAL);
+    arp_set_bpm(60);
+    arp_set_enabled(true);
+
+    uint32_t t = 10000;
+    arp_tick(t);            /* restart: fires immediately */
+    TEST_ASSERT_EQUAL_INT(1, cap_n);
+
+    arp_tick(t + 500);      /* half-interval: must NOT fire */
+    TEST_ASSERT_EQUAL_INT(1, cap_n);
+
+    arp_tick(t + 1000);     /* full interval: fires */
+    TEST_ASSERT_EQUAL_INT(2, cap_n);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_gate_clamped_at_2000ms);
+    RUN_TEST(test_internal_clock_interval_bpm60);
+    RUN_TEST(test_fallback_gate_is_half_interval);
+    RUN_TEST(test_updown_seq_wraps_at_correct_period);
     RUN_TEST(test_up_single_octave);
     RUN_TEST(test_down_single_octave);
     RUN_TEST(test_updown_no_repeated_endpoints);
