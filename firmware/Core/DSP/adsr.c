@@ -25,12 +25,17 @@ static float seg_coef(float ms, float tau_factor, float tick_hz)
     return 1.0f - expf(-1.0f / tau_ticks);
 }
 
+float adsr_attack_coef(float a_ms, float tick_hz)
+{
+    return seg_coef(a_ms, ATT_TAU_FACTOR, tick_hz);
+}
+
 void adsr_config(adsr_params_t *p, float a_ms, float d_ms, float sustain,
                  float r_ms, float tick_hz)
 {
     if (sustain < 0.0f) sustain = 0.0f;
     if (sustain > 1.0f) sustain = 1.0f;
-    p->a_coef  = seg_coef(a_ms, ATT_TAU_FACTOR, tick_hz);
+    p->a_coef  = adsr_attack_coef(a_ms, tick_hz);
     p->d_coef  = seg_coef(d_ms, DR_TAU_FACTOR, tick_hz);
     p->r_coef  = seg_coef(r_ms, DR_TAU_FACTOR, tick_hz);
     p->k_coef  = seg_coef(KILL_MS, DR_TAU_FACTOR, tick_hz);

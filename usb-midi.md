@@ -211,9 +211,9 @@ SRC_MIDI`. Mapping:
 - `app_midi_note_off(n)`  → `wt_osc_note_off(n)` (starts the voice's
   envelope release; with the filter off, an immediate cut).
 
-**Velocity** drives the per-voice envelope filter (filters.md §3.5): it
-scales the cutoff sweep depth and — when `Vel→Amp` is on — the voice
-level via `(vel/127)^1.5`.
+**Velocity** drives one selectable destination (the Filter Cfg `VelMode`
+row, filters.md §3.5): voice level (default), the envelope's A/D transient,
+the whole contour, the filter sweep depth, or the attack time.
 
 Outside the mode (or before a mode is picked), events are still drained
 and discarded, so stale notes never leak when you switch into USB MIDI.

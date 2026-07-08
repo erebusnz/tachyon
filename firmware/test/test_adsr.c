@@ -138,6 +138,36 @@ static void test_gate_off_when_idle_stays_idle(void)
     TEST_ASSERT_EQUAL_FLOAT(0.0f, adsr_step(&E, &P));
 }
 
+/* ---------------- attack-coef helper (velocity → attack time) ---------------- */
+
+static void test_attack_coef_matches_config(void)
+{
+    /* The standalone helper must use the same time mapping adsr_config does,
+     * so a per-voice override behaves exactly like a reconfigured attack. */
+    static const float ms[] = { 0.0f, 1.0f, 10.0f, 500.0f, 5000.0f };
+    for (unsigned i = 0; i < sizeof ms / sizeof ms[0]; i++) {
+        adsr_config(&P, ms[i], 100.0f, 0.5f, 100.0f, TICK_HZ);
+        TEST_ASSERT_EQUAL_FLOAT(P.a_coef, adsr_attack_coef(ms[i], TICK_HZ));
+    }
+}
+
+static void test_attack_coef_shorter_time_attacks_faster(void)
+{
+    /* Swap in a 1 ms coef against a 100 ms config: attack must complete much
+     * sooner (the ATK_TIME velocity mode's whole point). */
+    adsr_config(&P, 100.0f, 100.0f, 0.5f, 100.0f, TICK_HZ);
+    adsr_gate_on(&E);
+    int slow = run_attack(ticks_for_ms(200.0f));
+
+    adsr_init(&E);
+    P.a_coef = adsr_attack_coef(1.0f, TICK_HZ);
+    adsr_gate_on(&E);
+    int fast = run_attack(ticks_for_ms(200.0f));
+
+    TEST_ASSERT_TRUE(slow > 0 && fast > 0);
+    TEST_ASSERT_LESS_THAN_INT(slow / 10, fast);
+}
+
 /* ---------------- global properties ---------------- */
 
 static void test_output_always_in_bounds(void)
@@ -173,6 +203,8 @@ int main(void)
     RUN_TEST(test_retrigger_attacks_from_current_level);
     RUN_TEST(test_kill_is_fast_but_not_a_hard_cut);
     RUN_TEST(test_gate_off_when_idle_stays_idle);
+    RUN_TEST(test_attack_coef_matches_config);
+    RUN_TEST(test_attack_coef_shorter_time_attacks_faster);
     RUN_TEST(test_output_always_in_bounds);
     return UNITY_END();
 }

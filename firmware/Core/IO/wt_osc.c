@@ -41,8 +41,9 @@ typedef struct {
     float                     phase;
     adsr_t                    env;       /* per-voice contour */
     svf_t                     filt;      /* per-voice lowpass state */
-    float                     vel;       /* 0..1: scales the cutoff sweep */
-    float                     vel_gain;  /* (vel)^1.5, the amp curve */
+    float                     vel;       /* 0..1 normalised note velocity */
+    float                     vel_gain;  /* amp multiplier (VOLUME mode) */
+    float                     a_coef;    /* attack coef (ATK_TIME mode) */
 } wt_voice_t;
 
 static const multisample_t *s_ms;
@@ -56,11 +57,13 @@ static volatile int   s_flt_en  = 1;
 static volatile float s_cutoff  = 400.0f;   /* base cutoff, Hz */
 static volatile float s_res     = 0.15f;    /* 0..1 */
 static volatile float s_env_oct = 4.0f;     /* sweep depth, octaves */
-static volatile int   s_vel_amp = 1;
+static volatile int   s_vel_mode = WT_VEL_VOLUME;
 static adsr_params_t  s_adsr;               /* swapped whole under irq-off */
+static float          s_atk_ms = 5.0f;      /* configured attack, main loop */
 
-static float s_def_vel;        /* WT_DEF_VEL normalised + curved, from init */
-static float s_def_vel_gain;
+static float s_def_vel;        /* WT_DEF_VEL normalised, from init */
+static float s_def_vel_gain;   /* mode-baked values for the default velocity */
+static float s_def_a_coef;
 
 static volatile uint32_t s_max_cycles;      /* worst render block (DWT) */
 
@@ -89,6 +92,31 @@ static float zone_inc(const ms_zone_t *z, float freq_hz)
 static float vel_curve(float vel01)
 {
     return powf(vel01, 1.5f);
+}
+
+/* Velocity routing (filters.md §3.5): the mode picks the ONE thing velocity
+ * drives. The per-note values are baked here on the main loop (powf/expf) so
+ * the render only reads plain floats; the ATK_AMT/ATK_DEC/FLT_ENV modes shape
+ * the contour at block rate in the render instead. */
+static float vel_gain_for(float vel01)
+{
+    return (s_vel_mode == WT_VEL_VOLUME) ? vel_curve(vel01) : 1.0f;
+}
+
+static float atk_coef_for(float vel01)
+{
+    float ms = s_atk_ms;
+    if (s_vel_mode == WT_VEL_ATK_TIME) {
+        ms *= 1.0f - vel01;               /* harder = snappier */
+        if (ms < 1.0f) ms = 1.0f;
+    }
+    return adsr_attack_coef(ms, WT_TICK_HZ);
+}
+
+static void refresh_def_vel(void)
+{
+    s_def_vel_gain = vel_gain_for(s_def_vel);
+    s_def_a_coef   = atk_coef_for(s_def_vel);
 }
 
 /* Stop voice i sounding — anti-click fade with the filter on, hard cut with
@@ -121,6 +149,7 @@ static void wt_render(int32_t *stereo, uint32_t n, void *ctx)
     (void)ctx;
     uint32_t t0 = DWT->CYCCNT;
     int flt = s_flt_en;
+    int vmode = s_vel_mode;
 
     /* Snapshot the active voices once per block so the inner loop touches no
      * volatiles and skips silent voices. Block-rate modulation happens here:
@@ -138,10 +167,19 @@ static void wt_render(int32_t *stereo, uint32_t n, void *ctx)
 
         float e = 0.0f;
         if (flt) {
-            e = adsr_step(&s_voice[i].env, &s_adsr);
+            adsr_params_t pp = s_adsr;
+            pp.a_coef = s_voice[i].a_coef;  /* per-note attack (ATK_TIME) */
+            e = adsr_step(&s_voice[i].env, &pp);
             if (adsr_idle(&s_voice[i].env)) {   /* release finished: reclaim */
                 s_voice[i].active = 0;
                 continue;
+            }
+            /* Velocity-shaped contour (filters.md §3.5). */
+            if (vmode == WT_VEL_ATK_AMT) {      /* transient above sustain */
+                float su = s_adsr.sustain;
+                if (e > su) e = su + (e - su) * s_voice[i].vel;
+            } else if (vmode == WT_VEL_ATK_DEC) { /* whole contour */
+                e *= s_voice[i].vel;
             }
         }
 
@@ -159,8 +197,10 @@ static void wt_render(int32_t *stereo, uint32_t n, void *ctx)
         v[nv].eg = 1.0f;
         if (flt) {
             v[nv].eg = e * s_voice[i].vel_gain;
-            /* Velocity-scaled envelope sweep above the base cutoff. */
-            float fc = s_cutoff * exp2f(s_env_oct * e * s_voice[i].vel);
+            /* Envelope sweep above the base cutoff; in FLT_ENV mode velocity
+             * scales the sweep depth. */
+            float sw = (vmode == WT_VEL_FLT_ENV) ? e * s_voice[i].vel : e;
+            float fc = s_cutoff * exp2f(s_env_oct * sw);
             svf_coef(&v[nv].c, fc, s_res, AUDIO_FS_HZ);
             v[nv].f = s_voice[i].filt;
         }
@@ -254,10 +294,12 @@ void wt_osc_init(void)
         s_voice[i].vel = 0.0f;
         s_voice[i].vel_gain = 0.0f;
     }
-    s_def_vel      = (float)WT_DEF_VEL / 127.0f;
-    s_def_vel_gain = vel_curve(s_def_vel);
+    s_def_vel = (float)WT_DEF_VEL / 127.0f;
     /* filters.md §4.1 defaults; app.c pushes the UI's values over these. */
+    s_atk_ms = 5.0f;
     adsr_config(&s_adsr, 5.0f, 300.0f, 0.6f, 200.0f, WT_TICK_HZ);
+    refresh_def_vel();
+    for (int i = 0; i < WT_MAX_VOICES; i++) s_voice[i].a_coef = s_adsr.a_coef;
     s_max_cycles = 0;
 }
 
@@ -292,7 +334,8 @@ static void mono_set(int midi_note, float freq_hz, int reset_phase, int retrig)
     }
     if (retrig) adsr_gate_on(&s_voice[0].env);
     s_voice[0].vel = s_def_vel;
-    s_voice[0].vel_gain = s_vel_amp ? s_def_vel_gain : 1.0f;
+    s_voice[0].vel_gain = s_def_vel_gain;
+    s_voice[0].a_coef = s_def_a_coef;
     s_voice[0].active = 1;
     for (int i = 1; i < WT_MAX_VOICES; i++) hush_voice(i);
     __enable_irq();
@@ -332,7 +375,8 @@ void wt_osc_chord(const int *midi_notes, const float *freq_hz, int count)
         s_voice[i].midi = midi_notes[i];
         s_voice[i].age = ++s_age;
         s_voice[i].vel = s_def_vel;
-        s_voice[i].vel_gain = s_vel_amp ? s_def_vel_gain : 1.0f;
+        s_voice[i].vel_gain = s_def_vel_gain;
+        s_voice[i].a_coef = s_def_a_coef;
         adsr_gate_on(&s_voice[i].env);
         s_voice[i].active = 1;
     }
@@ -369,7 +413,8 @@ void wt_osc_note_on(int midi_note, float freq_hz, uint8_t vel)
     const ms_zone_t *z = select_zone(s_ms, midi_note);
     float inc = zone_inc(z, freq_hz);
     float v01 = (float)vel / 127.0f;
-    float vg  = s_vel_amp ? vel_curve(v01) : 1.0f;
+    float vg  = vel_gain_for(v01);
+    float ac  = atk_coef_for(v01);
     int i = alloc_voice(midi_note);
     uint32_t age = ++s_age;
 
@@ -382,6 +427,7 @@ void wt_osc_note_on(int midi_note, float freq_hz, uint8_t vel)
     s_voice[i].age = age;
     s_voice[i].vel = v01;
     s_voice[i].vel_gain = vg;
+    s_voice[i].a_coef = ac;
     adsr_gate_on(&s_voice[i].env);        /* attacks from the current level */
     s_voice[i].active = 1;
     __enable_irq();
@@ -465,14 +511,25 @@ void wt_osc_set_env_amount(float oct)
     s_env_oct = oct;
 }
 
-void wt_osc_set_vel_amp(bool on)
+void wt_osc_set_vel_mode(wt_vel_mode_t m)
 {
-    s_vel_amp = on;
-    /* vel_gain is baked per note; rebake sounding voices from their stored
-     * normalised velocity so the toggle is heard immediately. */
+    if ((int)m < 0 || (int)m >= WT_VEL_MODE_COUNT) return;
+    s_vel_mode = m;
+    refresh_def_vel();
+    /* vel_gain/a_coef are baked per note; rebake sounding voices from their
+     * stored normalised velocity so the switch is heard immediately. Baking
+     * calls powf/expf, so compute outside the critical section (vel is
+     * main-loop-owned — safe to read unlocked). */
+    float vg[WT_MAX_VOICES], ac[WT_MAX_VOICES];
+    for (int i = 0; i < WT_MAX_VOICES; i++) {
+        vg[i] = vel_gain_for(s_voice[i].vel);
+        ac[i] = atk_coef_for(s_voice[i].vel);
+    }
     __disable_irq();
-    for (int i = 0; i < WT_MAX_VOICES; i++)
-        s_voice[i].vel_gain = on ? vel_curve(s_voice[i].vel) : 1.0f;
+    for (int i = 0; i < WT_MAX_VOICES; i++) {
+        s_voice[i].vel_gain = vg[i];
+        s_voice[i].a_coef   = ac[i];
+    }
     __enable_irq();
 }
 
@@ -480,8 +537,15 @@ void wt_osc_set_adsr(float a_ms, float d_ms, float sustain, float r_ms)
 {
     adsr_params_t p;
     adsr_config(&p, a_ms, d_ms, sustain, r_ms, WT_TICK_HZ);
+    s_atk_ms = a_ms;
+    refresh_def_vel();
+    /* Per-voice attack coefs derive from the attack time; rebake so a live
+     * attack edit is heard on retriggers (ATK_TIME mode scales per note). */
+    float ac[WT_MAX_VOICES];
+    for (int i = 0; i < WT_MAX_VOICES; i++) ac[i] = atk_coef_for(s_voice[i].vel);
     __disable_irq();
     s_adsr = p;                 /* swap whole so one block never sees a mix */
+    for (int i = 0; i < WT_MAX_VOICES; i++) s_voice[i].a_coef = ac[i];
     __enable_irq();
 }
 

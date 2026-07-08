@@ -278,7 +278,7 @@ static void arp_render(void)
 
 typedef enum {
     FP_EN = 0, FP_CUTOFF, FP_RES, FP_ENVAMT, FP_ATK, FP_DEC, FP_SUS, FP_REL,
-    FP_VELAMP, FP_COUNT
+    FP_VELMODE, FP_COUNT
 } filt_param_t;
 
 #define FILT_ROWS 7            /* visible rows below the header (scrolls) */
@@ -297,11 +297,16 @@ static float s_f_atk    = 5.0f;     /* ms */
 static float s_f_dec    = 300.0f;   /* ms */
 static int   s_f_sus    = 60;       /* % */
 static float s_f_rel    = 200.0f;   /* ms */
-static bool  s_f_velamp = true;
+static int   s_f_velmode = WT_VEL_VOLUME;   /* velocity destination */
 
 static const char *const filt_names[FP_COUNT] = {
     "Filter", "Cutoff", "Res", "EnvAmt", "Attack", "Decay", "Sustain",
-    "Release", "Vel>Amp",
+    "Release", "VelMode",
+};
+
+/* wt_vel_mode_t order (filters.md §3.5). */
+static const char *const k_velmode_names[WT_VEL_MODE_COUNT] = {
+    "Volume", "AtkAmt", "AtkDec", "FltEnv", "AtkTime",
 };
 
 /* Push the parameter at `p` down to the oscillator. */
@@ -312,7 +317,7 @@ static void filt_apply(filt_param_t p)
     case FP_CUTOFF: wt_osc_set_cutoff(s_f_cutoff); break;
     case FP_RES:    wt_osc_set_resonance((float)s_f_res / 100.0f); break;
     case FP_ENVAMT: wt_osc_set_env_amount(s_f_envamt); break;
-    case FP_VELAMP: wt_osc_set_vel_amp(s_f_velamp); break;
+    case FP_VELMODE: wt_osc_set_vel_mode((wt_vel_mode_t)s_f_velmode); break;
     default:        /* any envelope segment: push the whole ADSR */
         wt_osc_set_adsr(s_f_atk, s_f_dec, (float)s_f_sus / 100.0f, s_f_rel);
         break;
@@ -325,7 +330,7 @@ static void filt_apply_all(void)
     filt_apply(FP_CUTOFF);
     filt_apply(FP_RES);
     filt_apply(FP_ENVAMT);
-    filt_apply(FP_VELAMP);
+    filt_apply(FP_VELMODE);
     filt_apply(FP_ATK);            /* covers A/D/S/R in one push */
 }
 
@@ -369,7 +374,12 @@ static void filt_param_adjust(filt_param_t p, int32_t d)
         break;
     }
     case FP_REL: s_f_rel = mul_step(s_f_rel, d, 1.12f, 5.0f, 10000.0f); break;
-    case FP_VELAMP: s_f_velamp = !s_f_velamp; break;
+    case FP_VELMODE: {
+        int v = (s_f_velmode + (int)d) % WT_VEL_MODE_COUNT;
+        if (v < 0) v += WT_VEL_MODE_COUNT;
+        s_f_velmode = v;
+        break;
+    }
     default: break;
     }
     filt_apply(p);
@@ -396,7 +406,7 @@ static void filt_value_str(filt_param_t p, char *b, int n)
     case FP_DEC:    filt_time_str(s_f_dec, b, n); break;
     case FP_SUS:    snprintf(b, n, "%d%%", s_f_sus); break;
     case FP_REL:    filt_time_str(s_f_rel, b, n); break;
-    case FP_VELAMP: snprintf(b, n, "%s", s_f_velamp ? "on" : "off"); break;
+    case FP_VELMODE: snprintf(b, n, "%s", k_velmode_names[s_f_velmode]); break;
     default: b[0] = '\0'; break;
     }
 }
@@ -516,8 +526,8 @@ static void midi_reset(void)
 }
 
 /* Route one drained event to the voice pool — gated to the USB MIDI mode so
- * stale notes never leak into another mode. Velocity drives the per-voice
- * envelope filter depth and level (filters.md §3.5). */
+ * stale notes never leak into another mode. Velocity drives the destination
+ * picked by the Filter Cfg VelMode row (filters.md §3.5). */
 static void midi_note_on(uint8_t note, uint8_t vel)
 {
     if (!s_mode_active || s_src != SRC_MIDI || note > 127) return;
@@ -1008,7 +1018,7 @@ void app_tick(void)
         } else if (ev == ENC_BTN_SHORT_PRESS) {
             if (s_filt_editing) {
                 s_filt_editing = false;                   /* confirm value */
-            } else if (s_filt_cursor == FP_EN || s_filt_cursor == FP_VELAMP) {
+            } else if (s_filt_cursor == FP_EN) {
                 filt_param_adjust((filt_param_t)s_filt_cursor, 1);  /* toggle in place */
             } else {
                 s_filt_editing = true;                    /* edit value param */

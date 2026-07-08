@@ -17,12 +17,12 @@
  * rate (only the zone choice depends on the note).
  *
  * With the filter enabled (default), each voice runs wavetable → SVF lowpass
- * → VCA: one velocity-scaled ADSR per voice sweeps the filter cutoff AND the
- * voice level, so playing harder is brighter and louder, and note-off decays
- * through a click-free release (the voice frees itself when the envelope
- * idles). With the filter off, the render is the original raw path: notes
- * hard-gate on/off. Envelope/cutoff run at block rate (~1.5 kHz); only the
- * filter state update is per-sample.
+ * → VCA: one ADSR per voice sweeps the filter cutoff AND the voice level, and
+ * note-off decays through a click-free release (the voice frees itself when
+ * the envelope idles). MIDI velocity drives exactly one destination, selected
+ * by wt_osc_set_vel_mode() (filters.md §3.5). With the filter off, the render
+ * is the original raw path: notes hard-gate on/off. Envelope/cutoff run at
+ * block rate (~1.5 kHz); only the filter state update is per-sample.
  *
  * A pool of WT_MAX_VOICES voices is summed each block. Voices share one master
  * level; the sum is scaled by 1/sqrt(active) so a chord sits near a single
@@ -41,6 +41,17 @@
 /* Polyphony — voice count. 4 covers a triad with a 7th; the 1/sqrt headroom and
  * the int32 output clamp keep the summed voices within the DAC's range. */
 #define WT_MAX_VOICES 4
+
+/* What MIDI velocity modulates — exactly one destination (filters.md §3.5).
+ * v = vel/127, S = the configured sustain level. */
+typedef enum {
+    WT_VEL_VOLUME = 0,   /* voice level × v^1.5 (perceptual curve) */
+    WT_VEL_ATK_AMT,      /* the A/D transient above sustain: S + (env−S)·v */
+    WT_VEL_ATK_DEC,      /* the whole contour, sustain included: env·v */
+    WT_VEL_FLT_ENV,      /* the cutoff sweep depth: 2^(EnvAmt·env·v) */
+    WT_VEL_ATK_TIME,     /* attack time × (1−v) — harder = snappier */
+    WT_VEL_MODE_COUNT
+} wt_vel_mode_t;
 
 void wt_osc_init(void);
 
@@ -69,12 +80,12 @@ void wt_osc_set_pitch(int midi_note, float freq_hz);
  * picks the zone, `freq[i]` sets the pitch. Default velocity. */
 void wt_osc_chord(const int *midi_notes, const float *freq_hz, int count);
 
-/* Start one voice for `midi_note` at velocity `vel` (1..127; scales the
- * filter-envelope depth and, when vel→amp is on, the voice level). Reuses the
- * note's own voice on a re-strike, else allocates a free voice, else the
- * quietest releasing one, else steals the oldest. note_off starts the release
- * of the matching voice(s); the voice keeps sounding until the envelope
- * idles (with the filter off: an immediate cut, as before). */
+/* Start one voice for `midi_note` at velocity `vel` (1..127; routed to the
+ * destination picked by wt_osc_set_vel_mode). Reuses the note's own voice on
+ * a re-strike, else allocates a free voice, else the quietest releasing one,
+ * else steals the oldest. note_off starts the release of the matching
+ * voice(s); the voice keeps sounding until the envelope idles (with the
+ * filter off: an immediate cut, as before). */
 void wt_osc_note_on(int midi_note, float freq_hz, uint8_t vel);
 void wt_osc_note_off(int midi_note);
 
@@ -100,7 +111,8 @@ void wt_osc_set_filter_enabled(bool en);
 void wt_osc_set_cutoff(float hz);          /* base cutoff, 20..20000 */
 void wt_osc_set_resonance(float res);      /* 0..1 */
 void wt_osc_set_env_amount(float oct);     /* envelope sweep depth, 0..7 oct */
-void wt_osc_set_vel_amp(bool on);          /* velocity also scales level */
+void wt_osc_set_vel_mode(wt_vel_mode_t m); /* velocity destination; sounding
+                                              voices are rebaked immediately */
 void wt_osc_set_adsr(float a_ms, float d_ms, float sustain, float r_ms);
 
 /* Worst-case wt_render block time since the last call (µs), then resets.

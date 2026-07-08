@@ -46,8 +46,8 @@ void app_render(void);
 /* USB-MIDI input seam. The USB-MIDI device class (usbd_midi.c) calls
  * app_midi_event() from the OTG IRQ for each parsed note event; events are
  * queued lock-free and drained on the main loop in app_tick(), driving the
- * polyphonic voice pool while the USB MIDI mode is active. Velocity scales
- * each voice's envelope-filter sweep and level (filters.md §3.5). */
+ * polyphonic voice pool while the USB MIDI mode is active. Velocity drives
+ * the destination picked by the Filter Cfg VelMode row (filters.md §3.5). */
 #define APP_MIDI_NOTE_OFF  0u
 #define APP_MIDI_NOTE_ON   1u
 void app_midi_event(uint8_t kind, uint8_t note, uint8_t vel);

@@ -178,12 +178,24 @@ void wt_osc_note_on(int midi_note, float freq_hz, uint8_t vel);  /* 1..127 */
 
 ### 3.5 Velocity mapping
 
-- Normalise `vel/127.0f`.
-- **To cutoff**: scales the envelope amount (step 2 above) — vel 0 → no
-  sweep, vel 127 → full `env_amount_oct` sweep.
-- **To amplitude**: perceptual curve `gain = (vel/127)^1.5`, on/off
-  switchable (`vel→amp: on/off`) for players who want brightness-only
-  dynamics.
+Velocity is normalised (`v = vel/127.0f`) and routed to **exactly one
+destination**, selected by the `VelMode` parameter (§4.1 row 8). The modes,
+with `S` = the configured sustain level:
+
+| Mode | Velocity drives | Mapping |
+|---|---|---|
+| **Volume** (default) | voice level | `gain × v^1.5` (perceptual curve) |
+| **AtkAmt** | the A/D transient above sustain | `env' = S + (env − S)·v` for `env > S`; sustain & release unchanged |
+| **AtkDec** | the whole contour, sustain included | `env' = env·v` |
+| **FltEnv** | the cutoff sweep depth | `fc = base × 2^(EnvAmt·env·v)`; level follows the raw envelope |
+| **AtkTime** | attack time | `t = attack_ms × (1−v)`, clamped ≥ 1 ms — harder = snappier |
+
+- The routing is exclusive: in every mode but Volume, loudness follows the
+  (possibly velocity-shaped) envelope only. AtkAmt/AtkDec shape the shared
+  contour, so they are heard on both brightness and level.
+- Per-note values (`vel_gain`, attack coef) are baked at note-on on the main
+  loop; a mode or attack edit rebakes sounding voices so it is heard
+  immediately. AtkAmt/AtkDec/FltEnv shaping runs at block rate in the render.
 - Velocity curve selection (soft/linear/hard) is a later phase; linear
   scaling first.
 
@@ -203,11 +215,12 @@ void wt_osc_note_on(int midi_note, float freq_hz, uint8_t vel);  /* 1..127 */
 | 5 | Decay | 5 ms – 10 s, log | 300 ms |
 | 6 | Sustain | 0 – 100 % | 60 % |
 | 7 | Release | 5 ms – 10 s, log | 200 ms |
-| 8 | Vel → amp | on / off | on |
+| 8 | VelMode | Volume / AtkAmt / AtkDec / FltEnv / AtkTime (§3.5) | Volume |
 
 Defaults are chosen so plugging in a keyboard immediately gives the classic
-"harder = brighter + louder" response. Live pot → cutoff (à la
-user-interface.md §3 pot handling) is a candidate follow-up, not phase 1.
+"harder = louder" response with the envelope sweeping the filter at full
+depth. Live pot → cutoff (à la user-interface.md §3 pot handling) is a
+candidate follow-up, not phase 1.
 
 ### 4.2 Menu placement
 
@@ -236,7 +249,7 @@ EnvAmt:  +4.0 oct
 Attack: [5 ms]        <- cursored + editing: inverted bar, value in brackets
 Decay:   300 ms
 Sustain: 60%
-                       (Release, Vel→Amp scrolled below)
+                       (Release, VelMode scrolled below)
 ```
 
 ### 4.4 Encoder controls
@@ -247,7 +260,7 @@ Identical interaction grammar to Arp Cfg (`APP_SCREEN_ARP_CFG` handling in
 | Input | Not editing | Editing |
 |---|---|---|
 | rotate | move cursor (wrap) | adjust value, one step per detent |
-| short press | on/off rows (Filter, Vel→Amp): toggle in place, like `AP_CLK`; value rows: enter edit (brackets on) | confirm, leave edit |
+| short press | on/off row (Filter): toggle in place, like `AP_CLK`; value rows (VelMode included): enter edit (brackets on) | confirm, leave edit |
 | long press | back to Config | leave edit first (stay on screen) |
 
 Value steps per detent:

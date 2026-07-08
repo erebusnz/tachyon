@@ -42,6 +42,11 @@ typedef struct {
 void adsr_config(adsr_params_t *p, float a_ms, float d_ms, float sustain,
                  float r_ms, float tick_hz);
 
+/* The attack coefficient alone, with the same time mapping adsr_config uses —
+ * for per-voice attack-time overrides (velocity → attack time). Calls expf;
+ * main loop only. */
+float adsr_attack_coef(float a_ms, float tick_hz);
+
 void adsr_init(adsr_t *e);      /* -> idle, level 0 */
 
 /* Gate transitions. gate_on (re)enters attack FROM THE CURRENT LEVEL — a
