@@ -268,7 +268,6 @@ Each step builds green; the feature is end-to-end after step 3.
 
 ## 8. Future / out of scope
 
-- **Velocity → per-voice gain** (needs a `wt_osc` voice-gain extension).
 - **CC / pitch-bend** (sustain pedal = CC64; pitch bend = CIN `0xE`).
 - **MIDI channel filter** (play only a selected channel; today: omni).
 - **MIDI clock in** (CIN `0xF`, 0xF8) driving the arp as an external
