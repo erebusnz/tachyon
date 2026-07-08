@@ -131,7 +131,7 @@ int _write(int file, char *ptr, int len)
 static struct {
   uint32_t loop_n, loop_max_cyc, last_cyc;
   uint8_t  have_last;
-  uint32_t rend_max_cyc, disp_max_cyc;
+  uint32_t rend_n, rend_max_cyc, disp_max_cyc;
   uint32_t arp_n, arp_last_ms, arp_min_ms, arp_max_ms;
   uint32_t next_report;
 } s_diag = { .arp_min_ms = 0xFFFFFFFFu };
@@ -166,21 +166,25 @@ static void diag_loop_pass(uint32_t now_ms, uint32_t rend_cyc, uint32_t disp_cyc
   s_diag.last_cyc = cyc;
   s_diag.have_last = 1;
   s_diag.loop_n++;
+  if (rend_cyc) s_diag.rend_n++;
   if (rend_cyc > s_diag.rend_max_cyc) s_diag.rend_max_cyc = rend_cyc;
   if (disp_cyc > s_diag.disp_max_cyc) s_diag.disp_max_cyc = disp_cyc;
 
   if ((int32_t)(now_ms - s_diag.next_report) >= 0) {
     uint32_t cyc_per_us = SystemCoreClock / 1000000u;
-    printf("diag: loop n=%lu max=%luus | rend max=%luus disp max=%luus | arp n=%lu dt=%lu..%lums\r\n",
+    printf("diag: loop n=%lu max=%luus | rend n=%lu max=%luus disp max=%luus dirty=%d | arp n=%lu dt=%lu..%lums\r\n",
            (unsigned long)s_diag.loop_n,
            (unsigned long)(s_diag.loop_max_cyc / cyc_per_us),
+           (unsigned long)s_diag.rend_n,
            (unsigned long)(s_diag.rend_max_cyc / cyc_per_us),
            (unsigned long)(s_diag.disp_max_cyc / cyc_per_us),
+           (int)app_dirty(),
            (unsigned long)s_diag.arp_n,
            (unsigned long)(s_diag.arp_n > 1 ? s_diag.arp_min_ms : 0),
            (unsigned long)(s_diag.arp_n > 1 ? s_diag.arp_max_ms : 0));
     s_diag.loop_n = 0;
     s_diag.loop_max_cyc = 0;
+    s_diag.rend_n = 0;
     s_diag.rend_max_cyc = 0;
     s_diag.disp_max_cyc = 0;
     s_diag.arp_n = s_diag.arp_n ? 1u : 0u;   /* keep last step as the new baseline */

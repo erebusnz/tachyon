@@ -645,6 +645,7 @@ void app_init(void)
     s_key_major = true;
     build_chords();
     s_chord_sel = chord_tonic_index();
+    cof_prewarm();   /* wheel geometry LUT (~35 ms) — not on the first frame */
 
     arp_init(arp_step_cb, NULL);
     arp_set_chord(triad, sizeof triad);

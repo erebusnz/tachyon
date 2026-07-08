@@ -101,27 +101,43 @@ static inline uint8_t sprite_get(const uint8_t *buf, int x, int y, int w)
         return (buf[byte] >> 4) & 0x0F;
 }
 
-void cof_render_angle(float angle_deg, const uint8_t *marked)
+/* ---- geometry LUT ----------------------------------------------------------
+ *
+ * Rendering ray-traces the donut per pixel (sqrtf + atan2f x 16k pixels ≈
+ * 35 ms) — but rotation is snapped to 30° detents, and a snapped rotation
+ * only PERMUTES which segment index lands on each pixel; the geometry
+ * (border/mark-ring distances, anti-aliasing) never changes. So the float
+ * math runs once into a 2-byte-per-pixel LUT and each frame is integer
+ * blends (~1 ms).
+ *
+ * byte0 high nibble: segment index at rotation 0 (0..11),
+ *                    LUT_OUTSIDE = background fill near the ring's AA fringe,
+ *                    LUT_SKIP    = pure background (pixel untouched).
+ * byte0 low nibble:  mark-ring alpha x 15 (inset black ring, marked segments).
+ * byte1:             border alpha x 255 (blend fill -> BORDER_LEVEL).
+ *
+ * 32 KB, in CCM-RAM next to the PCM pool (CPU-only, no DMA access). */
+#define LUT_OUTSIDE  0xE
+#define LUT_SKIP     0xF
+
+__attribute__((section(".ccmbss")))
+static uint8_t s_lut[WIDTH * HEIGHT * 2];
+static int s_lut_ready = 0;
+
+static uint8_t seg_grey_lut(int seg)
+{
+    float t = accidentals[seg] / 6.0f;
+    return (uint8_t)(GREY_LIGHT + t * (GREY_DARK - GREY_LIGHT) + 0.5f);
+}
+
+static void build_lut(void)
 {
     if (!vp_ready)
         compute_viewport();
 
-    // Snap to 30° detent positions.
-    float snapped = roundf(angle_deg / 30.0f) * 30.0f;
-    float rotation = -snapped;
-
-    // Precompute segment grey levels
-    uint8_t seg_grey[NUM_SEGMENTS];
-    for (int i = 0; i < NUM_SEGMENTS; i++) {
-        float t = accidentals[i] / 6.0f;
-        seg_grey[i] = (uint8_t)(GREY_LIGHT + t * (GREY_DARK - GREY_LIGHT) + 0.5f);
-    }
-
     float half_bw = BORDER_WIDTH / 2.0f;
+    uint8_t *out = s_lut;
 
-    Paint_Clear(BG_LEVEL);
-
-    // --- Pass 1: render donut segments ---
     for (int py = 0; py < HEIGHT; py++) {
         for (int px = 0; px < WIDTH; px++) {
             float x = vp_x + (px + 0.5f) / WIDTH * vp_size;
@@ -132,11 +148,14 @@ void cof_render_angle(float angle_deg, const uint8_t *marked)
             float dist_outer = r - OUTER_RADIUS;
             float dist_inner = INNER_RADIUS - r;
 
-            if (dist_outer > half_bw + 1.0f || dist_inner > half_bw + 1.0f)
+            if (dist_outer > half_bw + 1.0f || dist_inner > half_bw + 1.0f) {
+                *out++ = LUT_SKIP << 4;
+                *out++ = 0;
                 continue;
+            }
 
             float angle = atan2f(y, x) * RAD2DEG;
-            float adjusted = fmodf(angle + 90.0f + SEGMENT_ANGLE / 2.0f - rotation + 720.0f, 360.0f);
+            float adjusted = fmodf(angle + 90.0f + SEGMENT_ANGLE / 2.0f + 720.0f, 360.0f);
             int seg_index = (int)(adjusted / SEGMENT_ANGLE);
             if (seg_index >= NUM_SEGMENTS) seg_index = 0;
             float seg_pos = adjusted - seg_index * SEGMENT_ANGLE;
@@ -154,26 +173,76 @@ void cof_render_angle(float angle_deg, const uint8_t *marked)
             if (border_alpha < 0.0f) border_alpha = 0.0f;
             if (border_alpha > 1.0f) border_alpha = 1.0f;
 
-            uint8_t fill;
+            uint8_t hi, mark_q;
             if (dist_outer > 0.0f || dist_inner > 0.0f) {
+                hi = LUT_OUTSIDE;
+                mark_q = 0;
+            } else {
+                hi = (uint8_t)seg_index;
+                /* Inset black ring alpha for marked segments: just inside the
+                 * white border. */
+                float a = (half_bw + MARK_INSET) - dist_border;
+                if (a < 0.0f) a = 0.0f;
+                if (a > 1.0f) a = 1.0f;
+                mark_q = (uint8_t)(a * 15.0f + 0.5f);
+            }
+
+            *out++ = (uint8_t)((hi << 4) | mark_q);
+            *out++ = (uint8_t)(border_alpha * 255.0f + 0.5f);
+        }
+    }
+
+    s_lut_ready = 1;
+}
+
+void cof_prewarm(void)
+{
+    if (!s_lut_ready)
+        build_lut();
+}
+
+void cof_render_angle(float angle_deg, const uint8_t *marked)
+{
+    if (!s_lut_ready)
+        build_lut();
+
+    // Snap to 30° detent positions.
+    float snapped = roundf(angle_deg / 30.0f) * 30.0f;
+    float rotation = -snapped;
+    /* Snapped rotation shifts every pixel's segment index by whole segments. */
+    int rot_steps = (((int)lroundf(snapped / SEGMENT_ANGLE)) % NUM_SEGMENTS
+                     + NUM_SEGMENTS) % NUM_SEGMENTS;
+
+    // Precompute segment grey levels
+    uint8_t seg_grey[NUM_SEGMENTS];
+    for (int i = 0; i < NUM_SEGMENTS; i++)
+        seg_grey[i] = seg_grey_lut(i);
+
+    Paint_Clear(BG_LEVEL);
+
+    // --- Pass 1: donut segments from the LUT ---
+    const uint8_t *lut = s_lut;
+    for (int py = 0; py < HEIGHT; py++) {
+        for (int px = 0; px < WIDTH; px++) {
+            uint8_t b0 = *lut++;
+            uint8_t a8 = *lut++;
+            uint8_t hi = b0 >> 4;
+            if (hi == LUT_SKIP) continue;
+
+            int fill;
+            if (hi == LUT_OUTSIDE) {
                 fill = BG_LEVEL;
             } else {
-                fill = seg_grey[seg_index];
-                /* Inset black ring for marked segments: just inside the
-                 * white border, drawn over the grey fill. */
-                if (marked && marked[seg_index]) {
-                    float inset_edge = half_bw + MARK_INSET;
-                    if (dist_border < inset_edge) {
-                        float a = (inset_edge - dist_border);
-                        if (a > 1.0f) a = 1.0f;
-                        fill = (uint8_t)(fill * (1.0f - a) + BG_LEVEL * a + 0.5f);
-                    }
+                int seg = hi + rot_steps;
+                if (seg >= NUM_SEGMENTS) seg -= NUM_SEGMENTS;
+                fill = seg_grey[seg];
+                if (marked && marked[seg]) {
+                    int m = b0 & 0x0F;                    /* mark alpha x 15 */
+                    fill = (fill * (15 - m) + 7) / 15;    /* blend -> BG (0) */
                 }
             }
 
-            float value = fill * border_alpha + BORDER_LEVEL * (1.0f - border_alpha);
-            int pixel = (int)(value + 0.5f);
-            if (pixel < 0) pixel = 0;
+            int pixel = (fill * a8 + BORDER_LEVEL * (255 - a8) + 127) / 255;
             if (pixel > 15) pixel = 15;
 
             if (pixel != BG_LEVEL)
@@ -202,17 +271,16 @@ void cof_render_angle(float angle_deg, const uint8_t *marked)
                 uint8_t text_alpha = sprite_get(sp->pixels, sx, sy, sp->w);
                 if (text_alpha == 0) continue;
 
-                float x = vp_x + (px + 0.5f) / WIDTH * vp_size;
-                float y = vp_y + (py + 0.5f) / HEIGHT * vp_size;
-                float angle = atan2f(y, x) * RAD2DEG;
-                float adjusted = fmodf(angle + 90.0f + SEGMENT_ANGLE / 2.0f - rotation + 720.0f, 360.0f);
-                int seg_index = (int)(adjusted / SEGMENT_ANGLE);
-                if (seg_index >= NUM_SEGMENTS) seg_index = 0;
-                uint8_t bg = seg_grey[seg_index];
+                /* Segment (hence fill grey) under this pixel, from the LUT. */
+                uint8_t hi = s_lut[(py * WIDTH + px) * 2] >> 4;
+                uint8_t bg = BG_LEVEL;
+                if (hi < NUM_SEGMENTS) {
+                    int seg = hi + rot_steps;
+                    if (seg >= NUM_SEGMENTS) seg -= NUM_SEGMENTS;
+                    bg = seg_grey[seg];
+                }
 
-                float alpha = text_alpha / 15.0f;
-                int pixel = (int)(bg * (1.0f - alpha) + 0.5f);
-                if (pixel < 0) pixel = 0;
+                int pixel = (bg * (15 - text_alpha) + 7) / 15;
                 if (pixel > 15) pixel = 15;
 
                 Paint_SetPixel(px, py, (UWORD)pixel);
