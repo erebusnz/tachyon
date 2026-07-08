@@ -1022,7 +1022,6 @@ void app_tick(void)
                 s_filt_cursor = c;
             }
         }
-        render_filter_cfg();
         break;
 
     case APP_SCREEN_BROWSE:
@@ -1068,6 +1067,7 @@ void app_render(void)
     case APP_SCREEN_CHORD_ARP: render_chord();      break;
     case APP_SCREEN_ARP_CFG:   arp_render();        break;
     case APP_SCREEN_AUDIO:     render_audio_cfg();  break;
+    case APP_SCREEN_FILTER_CFG: render_filter_cfg(); break;
     case APP_SCREEN_BROWSE:    render_browse();     break;
     }
 }
