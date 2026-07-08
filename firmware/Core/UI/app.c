@@ -55,9 +55,10 @@ typedef enum {
     APP_SCREEN_KEY_ARP,   /* mode: key wheel   -> Arp         */
     APP_SCREEN_CHORD_ARP, /* mode: chord wheel -> Arp         */
     APP_SCREEN_USB_MIDI,  /* mode: USB MIDI    -> Direct poly */
-    APP_SCREEN_CONFIG,    /* Config submenu (Arp / Audio)  */
+    APP_SCREEN_CONFIG,    /* Config submenu (Arp / Audio / Filter) */
     APP_SCREEN_ARP_CFG,   /* config */
     APP_SCREEN_AUDIO,     /* config */
+    APP_SCREEN_FILTER_CFG,/* config (filters.md §4) */
     APP_SCREEN_BROWSE,    /* from Audio Cfg */
 } AppScreen;
 
@@ -265,6 +266,171 @@ static void arp_render(void)
     }
 }
 
+/* ---- Filter settings screen (filters.md §4) ---- */
+
+typedef enum {
+    FP_EN = 0, FP_CUTOFF, FP_RES, FP_ENVAMT, FP_ATK, FP_DEC, FP_SUS, FP_REL,
+    FP_VELAMP, FP_COUNT
+} filt_param_t;
+
+#define FILT_ROWS 7            /* visible rows below the header (scrolls) */
+
+static int  s_filt_cursor;
+static bool s_filt_editing;    /* rotation edits the cursored param's value */
+
+/* UI-owned values (defaults per filters.md §4.1), pushed to wt_osc on every
+ * edit so held notes react live. Like all other config, nothing persists —
+ * defaults return at boot. */
+static bool  s_f_en     = true;
+static float s_f_cutoff = 400.0f;   /* Hz */
+static int   s_f_res    = 15;       /* % */
+static float s_f_envamt = 4.0f;     /* octaves */
+static float s_f_atk    = 5.0f;     /* ms */
+static float s_f_dec    = 300.0f;   /* ms */
+static int   s_f_sus    = 60;       /* % */
+static float s_f_rel    = 200.0f;   /* ms */
+static bool  s_f_velamp = true;
+
+static const char *const filt_names[FP_COUNT] = {
+    "Filter", "Cutoff", "Res", "EnvAmt", "Attack", "Decay", "Sustain",
+    "Release", "Vel>Amp",
+};
+
+/* Push the parameter at `p` down to the oscillator. */
+static void filt_apply(filt_param_t p)
+{
+    switch (p) {
+    case FP_EN:     wt_osc_set_filter_enabled(s_f_en); break;
+    case FP_CUTOFF: wt_osc_set_cutoff(s_f_cutoff); break;
+    case FP_RES:    wt_osc_set_resonance((float)s_f_res / 100.0f); break;
+    case FP_ENVAMT: wt_osc_set_env_amount(s_f_envamt); break;
+    case FP_VELAMP: wt_osc_set_vel_amp(s_f_velamp); break;
+    default:        /* any envelope segment: push the whole ADSR */
+        wt_osc_set_adsr(s_f_atk, s_f_dec, (float)s_f_sus / 100.0f, s_f_rel);
+        break;
+    }
+}
+
+static void filt_apply_all(void)
+{
+    filt_apply(FP_EN);
+    filt_apply(FP_CUTOFF);
+    filt_apply(FP_RES);
+    filt_apply(FP_ENVAMT);
+    filt_apply(FP_VELAMP);
+    filt_apply(FP_ATK);            /* covers A/D/S/R in one push */
+}
+
+/* `d` detents of a multiplicative step at `ratio`, clamped to [lo, hi]. */
+static float mul_step(float v, int32_t d, float ratio, float lo, float hi)
+{
+    v *= powf(ratio, (float)d);
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    return v;
+}
+
+/* Adjust the parameter at the cursor by the encoder delta (filters.md §4.4:
+ * cutoff 12 steps/octave, envelope times x1.12/detent, linear otherwise). */
+static void filt_param_adjust(filt_param_t p, int32_t d)
+{
+    switch (p) {
+    case FP_EN:     s_f_en = !s_f_en; break;
+    case FP_CUTOFF: s_f_cutoff = mul_step(s_f_cutoff, d, 1.05946f, 20.0f, 20000.0f); break;
+    case FP_RES: {
+        int v = s_f_res + (int)d * 2;
+        if (v < 0)   v = 0;
+        if (v > 100) v = 100;
+        s_f_res = v;
+        break;
+    }
+    case FP_ENVAMT: {
+        float v = s_f_envamt + (float)d * 0.25f;
+        if (v < 0.0f) v = 0.0f;
+        if (v > 7.0f) v = 7.0f;
+        s_f_envamt = v;
+        break;
+    }
+    case FP_ATK: s_f_atk = mul_step(s_f_atk, d, 1.12f, 1.0f, 5000.0f); break;
+    case FP_DEC: s_f_dec = mul_step(s_f_dec, d, 1.12f, 5.0f, 10000.0f); break;
+    case FP_SUS: {
+        int v = s_f_sus + (int)d * 2;
+        if (v < 0)   v = 0;
+        if (v > 100) v = 100;
+        s_f_sus = v;
+        break;
+    }
+    case FP_REL: s_f_rel = mul_step(s_f_rel, d, 1.12f, 5.0f, 10000.0f); break;
+    case FP_VELAMP: s_f_velamp = !s_f_velamp; break;
+    default: break;
+    }
+    filt_apply(p);
+}
+
+/* "5 ms" below one second, "1.5 s" above. */
+static void filt_time_str(float ms, char *b, int n)
+{
+    if (ms < 999.5f) snprintf(b, n, "%d ms", (int)lroundf(ms));
+    else             snprintf(b, n, "%.1f s", ms / 1000.0f);
+}
+
+static void filt_value_str(filt_param_t p, char *b, int n)
+{
+    switch (p) {
+    case FP_EN:     snprintf(b, n, "%s", s_f_en ? "LP" : "off"); break;
+    case FP_CUTOFF:
+        if (s_f_cutoff < 999.5f) snprintf(b, n, "%d Hz", (int)lroundf(s_f_cutoff));
+        else                     snprintf(b, n, "%.1f kHz", s_f_cutoff / 1000.0f);
+        break;
+    case FP_RES:    snprintf(b, n, "%d%%", s_f_res); break;
+    case FP_ENVAMT: snprintf(b, n, "+%.1f oct", s_f_envamt); break;
+    case FP_ATK:    filt_time_str(s_f_atk, b, n); break;
+    case FP_DEC:    filt_time_str(s_f_dec, b, n); break;
+    case FP_SUS:    snprintf(b, n, "%d%%", s_f_sus); break;
+    case FP_REL:    filt_time_str(s_f_rel, b, n); break;
+    case FP_VELAMP: snprintf(b, n, "%s", s_f_velamp ? "on" : "off"); break;
+    default: b[0] = '\0'; break;
+    }
+}
+
+static void render_filter_cfg(void)
+{
+    char val[16], line[26];
+
+    Paint_Clear(BG_LEVEL);
+    Paint_DrawRectangle(0, 0, 127, 14, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+    Paint_DrawString_EN(4, 1, "Filter Cfg", &Font12, BG_LEVEL, FG_LEVEL);
+
+    /* Worst-case render block time since the last frame, right-aligned in the
+     * header — the filters.md §6 CPU check (deadline ~667 us). */
+    snprintf(line, sizeof line, "%luus", (unsigned long)wt_osc_render_max_us());
+    Paint_DrawString_EN((UWORD)(125 - 7 * (int)strlen(line)), 1, line,
+                        &Font12, BG_LEVEL, FG_LEVEL);
+
+    /* Nine params in a 7-row window, cursor kept centred (like the wavetable
+     * browser). */
+    int top = s_filt_cursor - FILT_ROWS / 2;
+    if (top > FP_COUNT - FILT_ROWS) top = FP_COUNT - FILT_ROWS;
+    if (top < 0) top = 0;
+
+    for (int i = 0; i < FILT_ROWS && top + i < FP_COUNT; i++) {
+        int p = top + i;
+        int y = 16 + i * 15;
+        filt_value_str((filt_param_t)p, val, sizeof val);
+        /* Brackets around the value mark the param being edited. */
+        if (p == s_filt_cursor && s_filt_editing)
+            snprintf(line, sizeof line, "%s:[%s]", filt_names[p], val);
+        else
+            snprintf(line, sizeof line, "%s: %s", filt_names[p], val);
+        if (p == s_filt_cursor) {
+            Paint_DrawRectangle(0, y - 1, 127, y + 12, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+            Paint_DrawString_EN(4, y, line, &Font12, BG_LEVEL, FG_LEVEL);
+        } else {
+            Paint_DrawString_EN(4, y, line, &Font12, FG_LEVEL, BG_LEVEL);
+        }
+    }
+}
+
 /* ---- shared helper: draw a horizontally-centered string ---- */
 
 static void draw_centered(int y, const char *s, sFONT *font, UWORD fg, UWORD bg)
@@ -342,18 +508,17 @@ static void midi_reset(void)
 }
 
 /* Route one drained event to the voice pool — gated to the USB MIDI mode so
- * stale notes never leak into another mode. Velocity is ignored for now
- * (wt_osc exposes only a master level; see usb-midi.md §5). */
+ * stale notes never leak into another mode. Velocity drives the per-voice
+ * envelope filter depth and level (filters.md §3.5). */
 static void midi_note_on(uint8_t note, uint8_t vel)
 {
-    (void)vel;
     if (!s_mode_active || s_src != SRC_MIDI || note > 127) return;
     if (!(s_midi_held[note >> 3] & (1u << (note & 7)))) {
         s_midi_held[note >> 3] |= (uint8_t)(1u << (note & 7));
         s_midi_held_n++;
     }
     s_midi_last = note;
-    wt_osc_note_on((int)note, midi_freq((int)note));
+    wt_osc_note_on((int)note, midi_freq((int)note), vel);
 }
 
 static void midi_note_off(uint8_t note)
@@ -600,14 +765,18 @@ static void render_main_menu(void)
     }
 }
 
+#define CONFIG_ITEMS 3
+
 static void render_config_menu(void)
 {
-    static const char *const items[] = { "Arp Cfg", "Audio Cfg" };
+    static const char *const items[CONFIG_ITEMS] = {
+        "Arp Cfg", "Audio Cfg", "Filter Cfg"
+    };
     Paint_Clear(BG_LEVEL);
     Paint_DrawRectangle(0, 0, 127, 14, FG_LEVEL, DOT_PIXEL_1X1, DRAW_FILL_FULL);
     draw_cog_icon(9, 7, BG_LEVEL, FG_LEVEL);
     Paint_DrawString_EN(20, 1, "Config", &Font12, BG_LEVEL, FG_LEVEL);
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < CONFIG_ITEMS; i++)
         draw_row(30 + i * 20, items[i], i == s_config_sel);
     draw_centered(104, "hold = back", &Font12, FG_LEVEL, BG_LEVEL);
 }
@@ -624,6 +793,7 @@ void app_init(void)
     s_tone_off = 0;
     s_root_semitone = 0;
     s_arp_cursor = 0;
+    s_filt_cursor = 0;
     s_key_tonic = 0;
     s_key_major = true;
     build_chords();
@@ -638,9 +808,10 @@ void app_init(void)
     arp_set_bpm(120);
     arp_set_enabled(false);
 
-    /* Output level + point the oscillator at the wavetable preloaded by
-     * app_preload() (loaded before audio started). */
+    /* Output level, filter defaults + point the oscillator at the wavetable
+     * preloaded by app_preload() (loaded before audio started). */
     wt_osc_set_level((float)s_level_pct / 100.0f);
+    filt_apply_all();
     if (s_wt_loaded) wt_osc_set_multisample(&s_active_ms);
 }
 
@@ -695,11 +866,13 @@ void app_tick(void)
         if (ev == ENC_BTN_LONG_PRESS) {
             s_screen = APP_SCREEN_MENU;
         } else if (ev == ENC_BTN_SHORT_PRESS) {
-            s_screen = (s_config_sel == 0) ? APP_SCREEN_ARP_CFG : APP_SCREEN_AUDIO;
+            s_screen = (s_config_sel == 0) ? APP_SCREEN_ARP_CFG
+                     : (s_config_sel == 1) ? APP_SCREEN_AUDIO
+                                           : APP_SCREEN_FILTER_CFG;
         } else if (detents) {
             int v = s_config_sel + (int)detents;
             if (v < 0) v = 0;
-            if (v > 1) v = 1;
+            if (v > CONFIG_ITEMS - 1) v = CONFIG_ITEMS - 1;
             s_config_sel = v;
         }
         render_config_menu();
@@ -798,6 +971,30 @@ void app_tick(void)
             }
         }
         render_audio_cfg();
+        break;
+
+    case APP_SCREEN_FILTER_CFG:
+        if (ev == ENC_BTN_LONG_PRESS) {
+            if (s_filt_editing) s_filt_editing = false;   /* leave edit first */
+            else s_screen = APP_SCREEN_CONFIG;
+        } else if (ev == ENC_BTN_SHORT_PRESS) {
+            if (s_filt_editing) {
+                s_filt_editing = false;                   /* confirm value */
+            } else if (s_filt_cursor == FP_EN || s_filt_cursor == FP_VELAMP) {
+                filt_param_adjust((filt_param_t)s_filt_cursor, 1);  /* toggle in place */
+            } else {
+                s_filt_editing = true;                    /* edit value param */
+            }
+        } else if (detents) {
+            if (s_filt_editing) {
+                filt_param_adjust((filt_param_t)s_filt_cursor, detents);
+            } else {
+                int c = ((int)s_filt_cursor + (int)detents) % FP_COUNT;
+                if (c < 0) c += FP_COUNT;
+                s_filt_cursor = c;
+            }
+        }
+        render_filter_cfg();
         break;
 
     case APP_SCREEN_BROWSE:

@@ -205,13 +205,15 @@ void app_midi_note_off(uint8_t note);
 ```
 Both are **gated**: they act only while `s_mode_active && s_src ==
 SRC_MIDI`. Mapping:
-- `app_midi_note_on(n,v)` → `wt_osc_note_on(n, midi_freq(n))` (the voice
-  pool allocates a free voice or steals the oldest).
-- `app_midi_note_off(n)`  → `wt_osc_note_off(n)`.
+- `app_midi_note_on(n,v)` → `wt_osc_note_on(n, midi_freq(n), v)` (the
+  voice pool reuses the note's own voice on a re-strike, else allocates
+  a free voice, else the quietest releasing one, else steals the oldest).
+- `app_midi_note_off(n)`  → `wt_osc_note_off(n)` (starts the voice's
+  envelope release; with the filter off, an immediate cut).
 
-**Velocity** is ignored initially — `wt_osc` exposes only a *master*
-level, not per-voice gain. Per-voice velocity is a future `wt_osc`
-extension (note it in `wt_osc.h`), not part of this pass.
+**Velocity** drives the per-voice envelope filter (filters.md §3.5): it
+scales the cutoff sweep depth and — when `Vel→Amp` is on — the voice
+level via `(vel/127)^1.5`.
 
 Outside the mode (or before a mode is picked), events are still drained
 and discarded, so stale notes never leak when you switch into USB MIDI.

@@ -194,6 +194,12 @@ In those modes each step drives the audio voice **and** `CV-OUT-A`
 sequencing external modules, clocked internally or from the clock input.
 The **USB MIDI** mode plays the internal voice only.
 
+Every voice runs through a velocity-sensitive **envelope filter** (a
+per-voice lowpass swept by an ADSR — playing harder is brighter and
+louder), configured in **Config → Filter Cfg**: cutoff, resonance,
+envelope amount, attack/decay/sustain/release, and velocity→level. See
+**[filters.md](filters.md)**.
+
 See **[harmony-engine.md](harmony-engine.md)** for the source × engine
 model behind the modes, and **[usb-midi.md](usb-midi.md)** for the
 USB-MIDI device (including the `USB_SERIAL_DEBUG` build flag that swaps the

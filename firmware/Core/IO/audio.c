@@ -9,8 +9,8 @@ extern I2S_HandleTypeDef hi2s3;
  * BCK/LRCK run continuously — the PCM5102A soft-mutes if its clocks halt. Each
  * frame is 4 halfwords: L_hi, L_lo, R_hi, R_lo (32-bit I2S sent as halfword
  * pairs). See audio-output-dac.md and firmware/README.md. */
-#define DMA_FRAMES   256
-#define HALF_FRAMES  (DMA_FRAMES / 2)
+#define DMA_FRAMES   (AUDIO_BLOCK_FRAMES * 2)
+#define HALF_FRAMES  AUDIO_BLOCK_FRAMES
 #define TONE_AMP     0x30000000   /* ~0.375 full-scale, headroom against clipping */
 #define TWO_PI       6.283185307179586f
 

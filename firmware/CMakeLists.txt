@@ -69,6 +69,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/IO/korg_ms.c
     Core/IO/multisample.c
     Core/IO/wt_osc.c
+    Core/DSP/adsr.c
+    Core/DSP/svf.c
     Core/Music/arp.c
     Core/Src/encoder.c
     # FatFs (ChaN R0.15) — SD-card filesystem, LFN + exFAT
@@ -85,6 +87,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/WAVESHARE_OLED/Fonts
     Core/UI
     Core/IO
+    Core/DSP
     Core/Music
     Middlewares/Third_Party/FatFs/src
 )

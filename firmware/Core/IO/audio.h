@@ -29,6 +29,12 @@ typedef void (*audio_render_fn)(int32_t *stereo, uint32_t n_frames, void *ctx);
  * accurate. See stm32f4xx_hal_msp.c (PLLI2S config). */
 #define AUDIO_FS_HZ   191964.29f
 
+/* Frames per render call (half the circular DMA buffer). The render callback
+ * is ALWAYS invoked with exactly this many frames — block-rate modulation
+ * (wt_osc's envelope tick) counts on it, running at
+ * AUDIO_FS_HZ / AUDIO_BLOCK_FRAMES (~1.5 kHz). */
+#define AUDIO_BLOCK_FRAMES  128
+
 /* Start the continuous (initially silent) I2S DMA stream and assert mute.
  * Call once after MX_I2S3_Init / MX_DMA_Init. */
 void audio_init(void);
