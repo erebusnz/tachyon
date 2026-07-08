@@ -71,7 +71,7 @@ TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
-
+DMA_HandleTypeDef hdma_spi1_tx;   /* OLED frame blit: SPI1 TX on DMA2 Stream3 */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -118,6 +118,76 @@ int _write(int file, char *ptr, int len)
         (void)ITM_SendChar((uint32_t)(uint8_t)ptr[i]);
 #endif /* USB_SERIAL_DEBUG */
     return len;
+}
+/* ---- timing diagnostics --------------------------------------------------
+ * Measures, over a 2 s window: main-loop pass count + worst gap between passes
+ * (DWT cycle counter, µs), worst render+blit duration, and arp inter-step
+ * intervals (ms). One 'diag:' line per window so the printf itself (which can
+ * stall ~20 ms per line when the CDC port isn't being drained) doesn't skew
+ * what it measures — though such a stall WILL show up in the next window's
+ * loop max. */
+#define DIAG_PERIOD_MS 2000u
+
+static struct {
+  uint32_t loop_n, loop_max_cyc, last_cyc;
+  uint8_t  have_last;
+  uint32_t rend_max_cyc, disp_max_cyc;
+  uint32_t arp_n, arp_last_ms, arp_min_ms, arp_max_ms;
+  uint32_t next_report;
+} s_diag = { .arp_min_ms = 0xFFFFFFFFu };
+
+static void diag_init(void)
+{
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+  s_diag.next_report = HAL_GetTick() + DIAG_PERIOD_MS;
+}
+
+void diag_arp_step(void)
+{
+  uint32_t now = HAL_GetTick();
+  if (s_diag.arp_n++) {
+    uint32_t dt = now - s_diag.arp_last_ms;
+    if (dt < s_diag.arp_min_ms) s_diag.arp_min_ms = dt;
+    if (dt > s_diag.arp_max_ms) s_diag.arp_max_ms = dt;
+  }
+  s_diag.arp_last_ms = now;
+}
+
+/* Call once per loop pass; prints + resets the window when due. */
+static void diag_loop_pass(uint32_t now_ms, uint32_t rend_cyc, uint32_t disp_cyc)
+{
+  uint32_t cyc = DWT->CYCCNT;
+  if (s_diag.have_last) {
+    uint32_t d = cyc - s_diag.last_cyc;
+    if (d > s_diag.loop_max_cyc) s_diag.loop_max_cyc = d;
+  }
+  s_diag.last_cyc = cyc;
+  s_diag.have_last = 1;
+  s_diag.loop_n++;
+  if (rend_cyc > s_diag.rend_max_cyc) s_diag.rend_max_cyc = rend_cyc;
+  if (disp_cyc > s_diag.disp_max_cyc) s_diag.disp_max_cyc = disp_cyc;
+
+  if ((int32_t)(now_ms - s_diag.next_report) >= 0) {
+    uint32_t cyc_per_us = SystemCoreClock / 1000000u;
+    printf("diag: loop n=%lu max=%luus | rend max=%luus disp max=%luus | arp n=%lu dt=%lu..%lums\r\n",
+           (unsigned long)s_diag.loop_n,
+           (unsigned long)(s_diag.loop_max_cyc / cyc_per_us),
+           (unsigned long)(s_diag.rend_max_cyc / cyc_per_us),
+           (unsigned long)(s_diag.disp_max_cyc / cyc_per_us),
+           (unsigned long)s_diag.arp_n,
+           (unsigned long)(s_diag.arp_n > 1 ? s_diag.arp_min_ms : 0),
+           (unsigned long)(s_diag.arp_n > 1 ? s_diag.arp_max_ms : 0));
+    s_diag.loop_n = 0;
+    s_diag.loop_max_cyc = 0;
+    s_diag.rend_max_cyc = 0;
+    s_diag.disp_max_cyc = 0;
+    s_diag.arp_n = s_diag.arp_n ? 1u : 0u;   /* keep last step as the new baseline */
+    s_diag.arp_min_ms = 0xFFFFFFFFu;
+    s_diag.arp_max_ms = 0;
+    s_diag.next_report = now_ms + DIAG_PERIOD_MS;
+  }
 }
 /* USER CODE END 0 */
 
@@ -215,6 +285,12 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  /* Display frame pacing. Logic (inputs, arp, gates) runs every pass — sub-ms
+   * period — so step/gate timing is tight; drawing + the 8 KB SPI frame push
+   * (the slow part) runs only every FRAME_MS. */
+  #define FRAME_MS 33u
+  uint32_t next_frame = HAL_GetTick();
+  diag_init();
   while (1)
   {
     /* USER CODE END WHILE */
@@ -228,10 +304,22 @@ int main(void)
     analog_in_sample();
 
     app_tick();
-    OLED_1in5_Display(image);
+
+    uint32_t rend_cyc = 0, disp_cyc = 0;
+    if (app_dirty() && (int32_t)(now - next_frame) >= 0) {
+      uint32_t t0 = DWT->CYCCNT;
+      app_render();
+      uint32_t t1 = DWT->CYCCNT;
+      OLED_1in5_Display(image);
+      disp_cyc = DWT->CYCCNT - t1;
+      rend_cyc = t1 - t0;
+      next_frame = now + FRAME_MS;
+    }
 
     /* Apply gate timing after the app may have (re)started pulses this pass. */
     gate_out_service(now);
+
+    diag_loop_pass(now, rend_cyc, disp_cyc);
   }
   /* USER CODE END 3 */
 }

@@ -269,9 +269,55 @@ static void test_internal_clock_interval_bpm60(void)
     TEST_ASSERT_EQUAL_INT(2, cap_n);
 }
 
+static void test_internal_clock_no_drift_on_late_tick(void)
+{
+    /* A late wakeup must not push the schedule back: after firing 300 ms late,
+     * the next step is still due on the original grid (t+2000), not 300 ms
+     * later. A schedule-from-now implementation fails the t+2000 assertion. */
+    static const uint8_t maj[3] = {0, 4, 7};
+    arp_set_chord(maj, 3);
+    arp_set_clock(ARP_CLK_INTERNAL);
+    arp_set_bpm(60);             /* 1000 ms per step */
+    arp_set_enabled(true);
+
+    uint32_t t = 10000;
+    arp_tick(t);                 /* restart: fires, next due t+1000 */
+    TEST_ASSERT_EQUAL_INT(1, cap_n);
+
+    arp_tick(t + 1300);          /* 300 ms late: fires */
+    TEST_ASSERT_EQUAL_INT(2, cap_n);
+
+    arp_tick(t + 2000);          /* back on the grid: must fire */
+    TEST_ASSERT_EQUAL_INT(3, cap_n);
+}
+
+static void test_internal_clock_resyncs_after_long_stall(void)
+{
+    /* Falling several intervals behind (e.g. a long SD load) must resync, not
+     * burst catch-up steps on subsequent ticks. */
+    static const uint8_t maj[3] = {0, 4, 7};
+    arp_set_chord(maj, 3);
+    arp_set_clock(ARP_CLK_INTERNAL);
+    arp_set_bpm(60);             /* 1000 ms per step */
+    arp_set_enabled(true);
+
+    uint32_t t = 10000;
+    arp_tick(t);                 /* fires, next due t+1000 */
+    arp_tick(t + 5000);          /* 4 intervals late: fires once, resyncs */
+    TEST_ASSERT_EQUAL_INT(2, cap_n);
+
+    arp_tick(t + 5500);          /* must NOT fire (no burst catch-up) */
+    TEST_ASSERT_EQUAL_INT(2, cap_n);
+
+    arp_tick(t + 6000);          /* one interval after the resync: fires */
+    TEST_ASSERT_EQUAL_INT(3, cap_n);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_internal_clock_no_drift_on_late_tick);
+    RUN_TEST(test_internal_clock_resyncs_after_long_stall);
     RUN_TEST(test_gate_clamped_at_2000ms);
     RUN_TEST(test_internal_clock_interval_bpm60);
     RUN_TEST(test_fallback_gate_is_half_interval);

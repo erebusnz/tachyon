@@ -55,7 +55,9 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+/* Timing diagnostics (main.c): call on each arp step; stats are printed as a
+ * 'diag:' console line every 2 s. */
+void diag_arp_step(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

@@ -122,7 +122,12 @@ void arp_tick(uint32_t now_ms)
   }
   if ((int32_t)(now_ms - s_next_ms) >= 0) {
     do_step(now_ms);
-    s_next_ms = now_ms + interval;
+    /* Drift-free: schedule from the previous deadline, not from now, so a late
+     * wakeup doesn't permanently slow the tempo. If we've fallen more than a
+     * whole interval behind (e.g. a long SD load), resync instead of bursting
+     * catch-up steps. */
+    s_next_ms += interval;
+    if ((int32_t)(now_ms - s_next_ms) >= 0) s_next_ms = now_ms + interval;
   }
 }
 

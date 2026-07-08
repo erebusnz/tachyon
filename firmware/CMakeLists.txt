@@ -77,6 +77,16 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Middlewares/Third_Party/FatFs/src/ffsystem.c
 )
 
+# Pixel-pushing UI code is on the display frame budget: at -O0 a full-screen
+# render costs ~16 ms (measured via the diag console line), which stalls the
+# main loop and jitters arp/gate timing. Always optimize these files, matching
+# the per-function optimize attributes used in the audio render path.
+set_source_files_properties(
+    Drivers/WAVESHARE_OLED/GUI/GUI_Paint.c
+    Core/UI/circle_of_fifths.c
+    PROPERTIES COMPILE_OPTIONS "-O2"
+)
+
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/WAVESHARE_OLED/Config

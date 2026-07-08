@@ -168,6 +168,19 @@ SECTIONS
     _eccmram = .;       /* create a global symbol at ccmram end */
   } >CCMRAM AT> FLASH
 
+  /* Zero-initialized (bss-style) data in CCM-RAM. NOLOAD: occupies no flash;
+   * the startup code zero-fills _sccmbss.._eccmbss like the ordinary bss.
+   * NOTE: CCM is CPU-only (D-bus) — never place DMA buffers here. */
+  .ccmbss (NOLOAD) :
+  {
+    . = ALIGN(4);
+    _sccmbss = .;
+    *(.ccmbss)
+    *(.ccmbss*)
+    . = ALIGN(4);
+    _eccmbss = .;
+  } >CCMRAM
+
   /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);
 

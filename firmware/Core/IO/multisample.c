@@ -5,9 +5,11 @@
 #include <string.h>
 
 /* Shared PCM pool. The largest stock multisample (E0=2048 .. E7=16 frames over
- * 8 octaves) totals ~4080 frames; 8192 gives generous headroom. ~16 KB BSS —
- * moves to CCM-RAM in Phase 3. */
+ * 8 octaves) totals ~4080 frames; 8192 gives generous headroom. Lives in
+ * CCM-RAM (zero-filled by startup): only the CPU reads it (wt_render), so it
+ * costs no SRAM1 and never contends with the DMA buses. */
 #define POOL_FRAMES   8192
+__attribute__((section(".ccmbss")))
 static int16_t s_pool[POOL_FRAMES];
 
 /* Scratch for the (tiny, ~700 B) .korgmultisample file. */

@@ -22,6 +22,12 @@
 #define BG_LEVEL       0
 #define FG_LEVEL       15
 
+/* Timing diagnostics: 1 = boot directly into Key Arp (see app_init), so the
+ * 'diag:' arp stats fill without touching the encoder. Normal builds: 0. */
+#ifndef DIAG_AUTOSTART_KEY_ARP
+#define DIAG_AUTOSTART_KEY_ARP 0
+#endif
+
 /* Pitch mapping.
  *
  * The wheel's note index counts fifths above C (COF_C=0, COF_G=1, ...), so the
@@ -82,6 +88,7 @@ typedef enum { ENG_DIRECT = 0, ENG_ARP } engine_t;
 
 static AppScreen   s_screen;
 static Menu        s_menu;
+static bool        s_dirty = true;  /* screen content changed since last render */
 static bool        s_mode_active;   /* false at boot -> silent until a mode is picked */
 static pitch_src_t s_src;
 static engine_t    s_engine;
@@ -166,6 +173,7 @@ static void arp_step_cb(int semitone, uint32_t gate_ms, void *ctx)
     gate_out_pulse(GATE_A, gate_ms);
     gate_out_pulse(GATE_B, gate_ms);
     s_tone_off = HAL_GetTick() + gate_ms;
+    diag_arp_step();
 }
 
 /* ---- Arp settings screen ---- */
@@ -466,6 +474,15 @@ static void chord_name(int k, char *b, int n) /* "C", "Dm", "Bdim" */
     snprintf(b, n, "%s%s", k_note_names[c->root % 12], suf);
 }
 
+static void render_key_arp(void)
+{
+    char line[16];
+    cof_render_angle(s_key_angle, s_marked);
+    snprintf(line, sizeof line, "%s %s", k_note_names[s_key_tonic],
+             s_key_major ? "maj" : "min");
+    draw_centered(116, line, &Font12, FG_LEVEL, BG_LEVEL);
+}
+
 static void render_chord(void)
 {
     char line[24];
@@ -642,6 +659,15 @@ void app_init(void)
      * app_preload() (loaded before audio started). */
     wt_osc_set_level((float)s_level_pct / 100.0f);
     if (s_wt_loaded) wt_osc_set_multisample(&s_active_ms);
+
+#if DIAG_AUTOSTART_KEY_ARP
+    /* TEMPORARY (timing diagnostics): boot straight into Key Arp playing, so
+     * the 'diag:' arp interval stats fill without touching the encoder. */
+    s_key_tonic = cof_semitone(centered_note_index());
+    key_arp_apply();
+    set_mode(SRC_WHEEL, ENG_ARP);
+    s_screen = APP_SCREEN_KEY_ARP;
+#endif
 }
 
 void app_tick(void)
@@ -650,8 +676,22 @@ void app_tick(void)
     int32_t  detents = encoder_get_delta();
     encoder_btn_event_t ev = encoder_get_button_event();
 
-    /* Drain USB-MIDI note events into the voice pool (USB MIDI mode). */
-    midi_drain();
+    /* Any input mutates what's on screen; so do MIDI events and the USB host
+     * appearing/vanishing while the USB MIDI screen is up. Everything else the
+     * screens show only changes through these paths. */
+    if (detents || ev != ENC_BTN_NONE) s_dirty = true;
+    if (s_screen == APP_SCREEN_USB_MIDI) {
+        static bool was_connected;
+        bool conn = USBD_MIDI_IsConnected();
+        if (conn != was_connected) { was_connected = conn; s_dirty = true; }
+    }
+    {
+        int held_before = s_midi_held_n, last_before = s_midi_last;
+        /* Drain USB-MIDI note events into the voice pool (USB MIDI mode). */
+        midi_drain();
+        if (s_midi_held_n != held_before || s_midi_last != last_before)
+            s_dirty = true;
+    }
 
     /* Arp runs while the active engine is Arp (arp_enabled set via set_mode). */
     if (arp_enabled()) {
@@ -688,7 +728,6 @@ void app_tick(void)
             }
             printf("MENU select: %s\r\n", k_mode_items[s_menu.selected]);
         }
-        render_main_menu();
         break;
 
     case APP_SCREEN_CONFIG:
@@ -702,7 +741,6 @@ void app_tick(void)
             if (v > 1) v = 1;
             s_config_sel = v;
         }
-        render_config_menu();
         break;
 
     case APP_SCREEN_USB_MIDI:
@@ -712,7 +750,6 @@ void app_tick(void)
             wt_osc_all_off();
             midi_reset();
         }
-        render_usb_midi();
         break;
 
     case APP_SCREEN_KEY_ARP:
@@ -728,13 +765,6 @@ void app_tick(void)
             s_key_tonic = cof_semitone(centered_note_index());
             key_arp_apply();
         }
-        cof_render_angle(s_key_angle, s_marked);
-        {
-            char line[16];
-            snprintf(line, sizeof line, "%s %s", k_note_names[s_key_tonic],
-                     s_key_major ? "maj" : "min");
-            draw_centered(116, line, &Font12, FG_LEVEL, BG_LEVEL);
-        }
         break;
 
     case APP_SCREEN_CHORD_ARP:
@@ -746,7 +776,6 @@ void app_tick(void)
             if (v > 6) v = 6;
             if (v != s_chord_sel) { s_chord_sel = v; chord_arp_apply(); }
         }
-        render_chord();
         break;
 
     case APP_SCREEN_ARP_CFG:
@@ -770,7 +799,6 @@ void app_tick(void)
                 s_arp_cursor = c;
             }
         }
-        arp_render();
         break;
 
     case APP_SCREEN_AUDIO:
@@ -797,7 +825,6 @@ void app_tick(void)
                 s_audio_cursor = c;
             }
         }
-        render_audio_cfg();
         break;
 
     case APP_SCREEN_BROWSE:
@@ -815,7 +842,6 @@ void app_tick(void)
             if (v >= s_folder_count) v = s_folder_count - 1;
             s_browse_sel = v;
         }
-        render_browse();
         break;
     }
 
@@ -825,5 +851,25 @@ void app_tick(void)
     if (s_tone_off && (int32_t)(now - s_tone_off) >= 0) {
         wt_osc_gate_off();
         s_tone_off = 0;
+    }
+}
+
+bool app_dirty(void)
+{
+    return s_dirty;
+}
+
+void app_render(void)
+{
+    s_dirty = false;
+    switch (s_screen) {
+    case APP_SCREEN_MENU:      render_main_menu();  break;
+    case APP_SCREEN_CONFIG:    render_config_menu(); break;
+    case APP_SCREEN_USB_MIDI:  render_usb_midi();   break;
+    case APP_SCREEN_KEY_ARP:   render_key_arp();    break;
+    case APP_SCREEN_CHORD_ARP: render_chord();      break;
+    case APP_SCREEN_ARP_CFG:   arp_render();        break;
+    case APP_SCREEN_AUDIO:     render_audio_cfg();  break;
+    case APP_SCREEN_BROWSE:    render_browse();     break;
     }
 }

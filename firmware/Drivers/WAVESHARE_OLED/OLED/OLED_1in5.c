@@ -189,12 +189,28 @@ function:   Update all memory to OLED
 ********************************************************************************/
 void OLED_1in5_Display(const UBYTE *Image)
 {
-    UWORD i, j, temp;
+#if USE_SPI_4W
+    /* Whole frame in one DMA transfer: DC high + CS low once, then 8 KB pushed
+     * by DMA2 while the caller keeps running (CS is released from the transfer
+     * IRQ). Returns immediately; the caller must not redraw `Image` until the
+     * next call (which waits for the previous blit to finish). The old per-byte
+     * path took tens of ms per frame and dominated the main-loop period. */
+    SPI4W_Wait_Idle();               /* previous frame + keep reg writes clear */
+    OLED_SetWindow(0, 0, 128, 128);
+    OLED_DC_1;
+    OLED_CS_0;
+    if (SPI4W_Write_DMA(Image, OLED_1in5_WIDTH / 2 * OLED_1in5_HEIGHT) != 0) {
+        /* DMA rejected (shouldn't happen) — blocking fallback. */
+        SPI4W_Write_nByte(Image, OLED_1in5_WIDTH / 2 * OLED_1in5_HEIGHT);
+        OLED_CS_1;
+    }
+#else
+    UWORD i, j;
     OLED_SetWindow(0, 0, 128, 128);
     for(i=0; i<OLED_1in5_HEIGHT; i++)
         for(j=0; j<OLED_1in5_WIDTH/2; j++)
         {
-            temp = Image[j + i*64];
-            OLED_WriteData(temp);
+            OLED_WriteData(Image[j + i*64]);
         }
+#endif
 }

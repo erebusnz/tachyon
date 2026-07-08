@@ -43,6 +43,9 @@ UBYTE 	System_Init(void);
 void    System_Exit(void);
 
 UBYTE 	SPI4W_Write_Byte(UBYTE value);
+void 	SPI4W_Write_nByte(const UBYTE *buf, UWORD len);
+UBYTE 	SPI4W_Write_DMA(const UBYTE *buf, UWORD len);   /* 0 = started */
+void 	SPI4W_Wait_Idle(void);                          /* spin until DMA done */
 void 	I2C_Write_Byte(UBYTE value, UBYTE Cmd);
 
 void Driver_Delay_ms(uint32_t xms);

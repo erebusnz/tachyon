@@ -40,7 +40,7 @@ extern DMA_HandleTypeDef hdma_spi3_tx;
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-
+extern DMA_HandleTypeDef hdma_spi1_tx;   /* main.c — OLED frame blit */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -380,7 +380,31 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* USER CODE BEGIN SPI1_MspInit 1 */
+    /* SPI1 (OLED) TX DMA: DMA2 Stream3, Channel 3, one-shot byte stream. Lets
+     * the 8 KB frame blit run without blocking the main loop (the blocking
+     * blit was ~23 ms per frame at -O0 and dominated arp/gate jitter). */
+    __HAL_RCC_DMA2_CLK_ENABLE();
 
+    hdma_spi1_tx.Instance                 = DMA2_Stream3;
+    hdma_spi1_tx.Init.Channel             = DMA_CHANNEL_3;
+    hdma_spi1_tx.Init.Direction           = DMA_MEMORY_TO_PERIPH;
+    hdma_spi1_tx.Init.PeriphInc           = DMA_PINC_DISABLE;
+    hdma_spi1_tx.Init.MemInc              = DMA_MINC_ENABLE;
+    hdma_spi1_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma_spi1_tx.Init.MemDataAlignment    = DMA_MDATAALIGN_BYTE;
+    hdma_spi1_tx.Init.Mode                = DMA_NORMAL;
+    hdma_spi1_tx.Init.Priority            = DMA_PRIORITY_LOW;
+    hdma_spi1_tx.Init.FIFOMode            = DMA_FIFOMODE_DISABLE;
+    if (HAL_DMA_Init(&hdma_spi1_tx) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+    __HAL_LINKDMA(hspi, hdmatx, hdma_spi1_tx);
+
+    /* Below the audio refill (8): the OLED blit completion is never urgent. */
+    HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 9, 0);
+    HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
     /* USER CODE END SPI1_MspInit 1 */
   }
   else if(hspi->Instance==SPI2)
