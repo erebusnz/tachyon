@@ -27,7 +27,14 @@ target_include_directories(test_arp PRIVATE ${FW}/Core/Music)
 add_executable(test_wav test_wav.c ${FW}/Core/IO/wav.c support/ff_fake.c)
 target_include_directories(test_wav PRIVATE ${FW}/Core/IO ${CMAKE_CURRENT_SOURCE_DIR}/support)
 
-foreach(t test_arp test_wav)
+# DSP modules (filters.md) — fully pure, compiled straight in.
+add_executable(test_adsr test_adsr.c ${FW}/Core/DSP/adsr.c)
+target_include_directories(test_adsr PRIVATE ${FW}/Core/DSP)
+
+add_executable(test_svf test_svf.c ${FW}/Core/DSP/svf.c)
+target_include_directories(test_svf PRIVATE ${FW}/Core/DSP)
+
+foreach(t test_arp test_wav test_adsr test_svf)
     target_link_libraries(${t} PRIVATE unity)
     target_compile_options(${t} PRIVATE -Wall -Wextra)
     add_test(NAME ${t} COMMAND ${t})
