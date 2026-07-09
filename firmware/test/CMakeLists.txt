@@ -34,8 +34,14 @@ target_include_directories(test_adsr PRIVATE ${FW}/Core/DSP)
 add_executable(test_svf test_svf.c ${FW}/Core/DSP/svf.c)
 target_include_directories(test_svf PRIVATE ${FW}/Core/DSP)
 
+# libm is a separate library on Linux (-lm); MinGW/MSVC have it in the CRT.
+find_library(LIBM m)
+
 foreach(t test_arp test_wav test_adsr test_svf)
     target_link_libraries(${t} PRIVATE unity)
+    if(LIBM)
+        target_link_libraries(${t} PRIVATE ${LIBM})
+    endif()
     target_compile_options(${t} PRIVATE -Wall -Wextra)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
