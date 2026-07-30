@@ -110,6 +110,28 @@ docs. Combined per-board schematic PDFs live at the repo root:
 [`mcu-audio-board-schematic.pdf`](mcu-audio-board-schematic.pdf).
 The EasyEDA Pro source project is [`tachyon.eprj`](tachyon.eprj).
 
+### Ordering PCBs
+
+Using EasyEDA you can order direct with JLCPCB, but
+[PCBWay](https://www.pcbway.com/) also provide excellent
+high-quality PCB manufacturing, with a choice of 9 different
+solder mask colors as well as a Black FR4 substrate option —
+perfect for the Eurorack front plate.
+
+When ordering the two 4-layer boards (IO and backing) from PCBWay,
+the EasyEDA layer names aren't recognised automatically — select the
+following Gerber file for each layer:
+
+| PCBWay layer | Gerber file |
+|---|---|
+| L1 | `Gerber_TopLayer.GTL` |
+| L2 | `Gerber_InnerLayer1.G1` |
+| L3 | `Gerber_InnerLayer2.G2` |
+| L4 | `Gerber_BottomLayer.GBL` |
+
+Alternatively, rename `.G1` to `.GP1` and `.G2` to `.GP2` before
+uploading.
+
 ### Bring-up
 
 - **[calibration.md](calibration.md)** — one-time CV output
