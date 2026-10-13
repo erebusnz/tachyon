@@ -37,7 +37,12 @@ target_include_directories(test_svf PRIVATE ${FW}/Core/DSP)
 # libm is a separate library on Linux (-lm); MinGW/MSVC have it in the CRT.
 find_library(LIBM m)
 
-foreach(t test_arp test_wav test_adsr test_svf)
+add_executable(test_wt_osc test_wt_osc.c ${FW}/Core/DSP/adsr.c ${FW}/Core/DSP/svf.c)
+target_include_directories(test_wt_osc PRIVATE support ${FW}/Core/IO ${FW}/Core/DSP)
+add_executable(test_analog_in test_analog_in.c)
+target_include_directories(test_analog_in PRIVATE support ${FW}/Core/IO)
+
+foreach(t test_arp test_wav test_adsr test_svf test_wt_osc test_analog_in)
     target_link_libraries(${t} PRIVATE unity)
     if(LIBM)
         target_link_libraries(${t} PRIVATE ${LIBM})

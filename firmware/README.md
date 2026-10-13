@@ -1,5 +1,33 @@
 # Firmware
 
+## Voice transitions and control acquisition
+
+Replacing a sounding wavetable voice (including MIDI retriggers and chord
+changes) fades the old voice out over 5 ms, starts the requested note at the
+next audio block, then fades in over 5 ms. This also applies in filter bypass.
+Only four voices render at once; a replacement can wait up to about 5.7 ms
+from the first render block after its request. Note-off, panic, filter-mode
+changes and wavetable unloading cancel pending notes. Continuous pitch updates
+retain legato behavior.
+
+ADC1 scans CV-A, CV-B and the adjustment pot at 1 kHz, triggered by TIM8 TRGO.
+DMA2 Stream0/channel 0 stores alternating three-sample scans in SRAM and
+publishes them from short DMA callbacks. TIM8 needs no external pin and is
+owned by `analog_in`; TIM2/TIM3 gate functions are unchanged. CV samples are
+unfiltered; the pot has a 1/8 one-pole filter at 1 kHz (about 7.5 ms time
+constant). There is no ADC polling in the main loop. Application/sequence
+updates still consume the latest readings in the main loop; this change does
+not move the application or clock handling into an interrupt.
+
+The `diag:` line reports completed ADC scans (`adc n`, about 2000 per normal
+two-second reporting interval), useful when checking sampling during OLED
+activity. Hardware validation should check distinct DC voltages on the three
+channels, CV steps during redraws, and the worst audio-render time during rapid
+four-voice replacements against the ~667 us block deadline.
+
+TIM8 and the ADC DMA stream are initialized by `analog_in_init`, rather than
+CubeMX-generated timer/DMA setup. Preserve this ownership when regenerating.
+
 ## Flashing
 
 ### ST-LINK/V2 over SWD (preferred)

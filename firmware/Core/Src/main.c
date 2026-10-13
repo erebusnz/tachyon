@@ -134,6 +134,7 @@ static struct {
   uint32_t rend_n, rend_max_cyc, disp_max_cyc;
   uint32_t arp_n, arp_last_ms, arp_min_ms, arp_max_ms;
   uint32_t next_report;
+  uint32_t adc_last;
 } s_diag = { .arp_min_ms = 0xFFFFFFFFu };
 
 static void diag_init(void)
@@ -142,6 +143,7 @@ static void diag_init(void)
   DWT->CYCCNT = 0;
   DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
   s_diag.next_report = HAL_GetTick() + DIAG_PERIOD_MS;
+  s_diag.adc_last = analog_in_scan_count();
 }
 
 void diag_arp_step(void)
@@ -172,7 +174,8 @@ static void diag_loop_pass(uint32_t now_ms, uint32_t rend_cyc, uint32_t disp_cyc
 
   if ((int32_t)(now_ms - s_diag.next_report) >= 0) {
     uint32_t cyc_per_us = SystemCoreClock / 1000000u;
-    printf("diag: loop n=%lu max=%luus | rend n=%lu max=%luus disp max=%luus dirty=%d | arp n=%lu dt=%lu..%lums\r\n",
+    uint32_t adc_now = analog_in_scan_count();
+    printf("diag: loop n=%lu max=%luus | rend n=%lu max=%luus disp max=%luus dirty=%d | arp n=%lu dt=%lu..%lums | adc n=%lu\r\n",
            (unsigned long)s_diag.loop_n,
            (unsigned long)(s_diag.loop_max_cyc / cyc_per_us),
            (unsigned long)s_diag.rend_n,
@@ -181,7 +184,9 @@ static void diag_loop_pass(uint32_t now_ms, uint32_t rend_cyc, uint32_t disp_cyc
            (int)app_dirty(),
            (unsigned long)s_diag.arp_n,
            (unsigned long)(s_diag.arp_n > 1 ? s_diag.arp_min_ms : 0),
-           (unsigned long)(s_diag.arp_n > 1 ? s_diag.arp_max_ms : 0));
+           (unsigned long)(s_diag.arp_n > 1 ? s_diag.arp_max_ms : 0),
+           (unsigned long)(adc_now - s_diag.adc_last));
+    s_diag.adc_last = adc_now;
     s_diag.loop_n = 0;
     s_diag.loop_max_cyc = 0;
     s_diag.rend_n = 0;
@@ -305,7 +310,6 @@ int main(void)
     /* Refresh inputs first so app_tick (arp external-clock stepping) sees the
      * freshest CLK-IN edge this pass. */
     clock_in_poll(now);
-    analog_in_sample();
 
     app_tick();
 
@@ -396,18 +400,16 @@ static void MX_ADC1_Init(void)
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  /* Single-channel mode: analog_in reads CV-A/CV-B/pot one at a time
-   * (reconfiguring the channel per read) — a polled multi-rank scan overruns
-   * the data register and misaligns channels on the F4. */
-  hadc1.Init.ScanConvMode = DISABLE;
+  /* TIM8 triggers at 1 kHz; DMA drains all three ranks without polling. */
+  hadc1.Init.ScanConvMode = ENABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T8_TRGO;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.NbrOfConversion = 3;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
@@ -417,7 +419,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = 1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+  sConfig.SamplingTime = ADC_SAMPLETIME_56CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
