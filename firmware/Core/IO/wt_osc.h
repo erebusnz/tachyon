@@ -23,6 +23,11 @@
  * by wt_osc_set_vel_mode() (filters.md §3.5). With the filter off, the render
  * is the original raw path: notes hard-gate on/off. Envelope/cutoff run at
  * block rate (~1.5 kHz); only the filter state update is per-sample.
+ * Replacing a sounding voice uses sample-rate fades even with the filter off:
+ * 5 ms out, replacement at the next block boundary, then 5 ms in. This keeps
+ * rendering bounded to four voices; the replacement starts within ~5.7 ms
+ * of the first render block after the request. Further requests replace the
+ * queued note without extending the fade; note-off/panic cancels queued notes.
  *
  * A pool of WT_MAX_VOICES voices is summed each block. Voices share one master
  * level; the sum is scaled by 1/sqrt(active) so a chord sits near a single
@@ -63,8 +68,8 @@ void wt_osc_set_multisample(const multisample_t *ms);
 /* --- Monophonic (voice 0): the arp / key preview / CV free-run path. --- */
 
 /* Start a note: pick the zone for `midi_note` and tune to `freq_hz`, gate on
- * (retriggers the envelope). Restarts the table phase on a new zone (clean
- * note attack). Hushes any other voices left over from a chord. */
+ * (retriggers the envelope). A sounding voice fades before the new note starts
+ * with reset phase/envelope/filter state. Hushes other voices from a chord. */
 void wt_osc_note(int midi_note, float freq_hz);
 
 /* Continuously update pitch/zone of voice 0 and keep sounding, WITHOUT
@@ -83,7 +88,7 @@ void wt_osc_chord(const int *midi_notes, const float *freq_hz, int count);
 /* Start one voice for `midi_note` at velocity `vel` (1..127; routed to the
  * destination picked by wt_osc_set_vel_mode). Reuses the note's own voice on
  * a re-strike, else allocates a free voice, else the quietest releasing one,
- * else steals the oldest. note_off starts the release of the matching
+ * else steals the oldest, fading it before reuse. note_off starts the release of the matching
  * voice(s); the voice keeps sounding until the envelope idles (with the
  * filter off: an immediate cut, as before). */
 void wt_osc_note_on(int midi_note, float freq_hz, uint8_t vel);

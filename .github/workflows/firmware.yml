@@ -1,5 +1,10 @@
 name: firmware
 
+# Match the GCC 14.3 family used by STM32CubeCLT locally. Avoid silently
+# changing compilers (or picking up a broken download) through "latest".
+env:
+  ARM_GCC_RELEASE: '14.3.Rel1'
+
 # Tier 1 (build) + Tier 1.5 (static analysis) CI for firmware/.
 # Builds the STM32F405 firmware across both USB personalities and both build
 # types using the repo's own CMake presets, then runs cppcheck over Core/.
@@ -32,6 +37,8 @@ jobs:
 
       - name: Install arm-none-eabi-gcc
         uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: ${{ env.ARM_GCC_RELEASE }}
 
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
@@ -59,6 +66,8 @@ jobs:
 
       - name: Install arm-none-eabi-gcc
         uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: ${{ env.ARM_GCC_RELEASE }}
 
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build cppcheck

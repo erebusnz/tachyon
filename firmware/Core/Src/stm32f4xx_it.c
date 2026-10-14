@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "encoder.h"
+#include "analog_in.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -243,6 +244,11 @@ void OTG_FS_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+void DMA2_Stream0_IRQHandler(void)
+{
+  analog_in_dma_irq();
+}
+
 /**
   * @brief This function handles DMA2 stream3 global interrupt (SPI1 TX — OLED).
   */
